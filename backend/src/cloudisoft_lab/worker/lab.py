@@ -66,6 +66,8 @@ class Lab:
     llm: LLMGateway | None = None
     news_feeds: list[str] = field(default_factory=list)
     news: list[dict[str, object]] = field(default_factory=list)
+    bot_enabled: bool = True
+    frames: dict[str, pd.DataFrame] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.paper = PaperBroker(Decimal(str(self.settings.paper_starting_balance_usd)))
@@ -141,6 +143,7 @@ class Lab:
                 self.audit.record("market_data.rejected", "market_scanner", {"symbol": sym, "issues": q.issues})
                 continue
             frames[sym] = df
+            self.frames[sym] = df
             self.paper.mark(sym, Decimal(str(float(df["close"].iloc[-1]))))
         # Scanning is rule-based (no inference cost), so it runs in every state but DEAD.
         self.last_scan = [m.payload for m in scan(frames)] if report.policy.risk_monitoring else []
@@ -159,7 +162,7 @@ class Lab:
             qty = ZERO
             if qty_held > 0 and (sig["exit"] or self._protective_exit(sym, price)):
                 side, qty = Side.SELL, qty_held
-            elif qty_held == 0 and sig["entry"] and self.strategies.active() is not None:
+            elif qty_held == 0 and sig["entry"] and self.bot_enabled and self.strategies.active() is not None:
                 inst = await self.provider.get_instrument(sym)
                 budget = self.paper.cash * Decimal(str(self.active_strategy().risk.position_fraction))
                 qty = floor_to_step(budget / (price * Decimal("1.002")), inst.qty_step)
@@ -182,12 +185,15 @@ class Lab:
 
     async def _submit(self, sym: str, side: Side, qty: Decimal, price: Decimal, report: SurvivalReport,
                       now: dt.datetime) -> dict[str, object]:
-        inst = await self.provider.get_instrument(sym)
-        held = self.paper.positions.get(sym)
         order = OrderRequest(mode=TradingMode.PAPER, market=MarketKind.CRYPTO, symbol=sym, side=side,
                              quantity=qty, strategy_id=self.active_strategy().fingerprint(),
                              requested_by="strategy_researcher")
-        ctx = RiskContext(
+        return await self._execute(order, price, report, now)
+
+    async def risk_context(self, sym: str, price: Decimal, report: SurvivalReport, now: dt.datetime) -> RiskContext:
+        inst = await self.provider.get_instrument(sym)
+        held = self.paper.positions.get(sym)
+        return RiskContext(
             now=now, market=MARKETS[MarketKind.CRYPTO], instrument=inst, reference_price=price,
             available_cash=self.paper.cash, equity=self.paper.equity(),
             position_qty=held.qty if held else ZERO,
@@ -197,6 +203,11 @@ class Lab:
             last_closed_trade_pnl=self.paper.last_closed_trade_pnl,
             last_entry_notional=held.last_entry_notional if held else None,
         )
+
+    async def _execute(self, order: OrderRequest, price: Decimal, report: SurvivalReport,
+                       now: dt.datetime) -> dict[str, object]:
+        sym, side, qty = order.symbol, order.side, order.quantity
+        ctx = await self.risk_context(sym, price, report, now)
         before = self.paper.realised_pnl
         res, decision = await self.router.submit(order, ctx)
         self.agents.log_task("risk_manager", "evaluate", "approved" if decision.approved else "rejected",
@@ -209,7 +220,37 @@ class Lab:
                 self.ledger.add(Entry.REALISED_TRADING_PNL, gross, origin=DataOrigin.SIMULATED, at=now)
                 self.closed_trades.append(TradeStat(now, self.paper.last_closed_trade_pnl or ZERO))
         return {"symbol": sym, "side": side, "qty": str(qty), "status": res.status,
+                "price": str(res.average_price) if res.average_price else None, "fees": str(res.fees),
                 "reasons": decision.reasons, "origin": res.origin}
+
+    async def manual_trade(self, sym: str, side: Side, amount_usd: Decimal | None, sell_all: bool, actor: str,
+                           preview: bool = False) -> dict[str, object]:
+        """Owner-initiated PAPER trade. Goes through exactly the same risk engine and router as the bot."""
+        now = dt.datetime.now(dt.UTC)
+        if sym not in self.paper.marks:
+            raise ValueError("no price yet for this coin; try again in a moment")
+        price = self.paper.marks[sym]
+        inst = await self.provider.get_instrument(sym)
+        held = self.paper.positions.get(sym)
+        if side == Side.SELL and sell_all:
+            qty = held.qty if held else ZERO
+        else:
+            if amount_usd is None or amount_usd <= 0:
+                raise ValueError("enter an amount greater than 0")
+            qty = floor_to_step(amount_usd / (price * (1 + self.paper.slippage)), inst.qty_step)
+            if side == Side.SELL and held:
+                qty = min(qty, held.qty)
+        if qty <= 0:
+            raise ValueError("that amount is too small to buy any of this coin")
+        order = OrderRequest(mode=TradingMode.PAPER, market=MarketKind.CRYPTO, symbol=sym, side=side,
+                             quantity=qty, requested_by=actor)
+        report = self.survival_report(now)
+        if preview:
+            d = self.risk.evaluate(order, await self.risk_context(sym, price, report, now))
+            return {"symbol": sym, "side": side, "qty": str(qty), "price": str(price),
+                    "notional": str(d.est_notional), "fees": str(d.est_fees_round_trip / 2),
+                    "approved": d.approved, "reasons": d.reasons}
+        return await self._execute(order, price, report, now)
 
     async def run_forever(self, after_tick=None) -> None:  # type: ignore[no-untyped-def]
         log.info("paper_loop.start", symbols=self.settings.paper_symbols)

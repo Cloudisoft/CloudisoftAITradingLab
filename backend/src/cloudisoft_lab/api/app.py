@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import SecretStr
 
-from cloudisoft_lab.api.routes import core, funds, governance, research, strategies
+from cloudisoft_lab.api.routes import core, funds, governance, research, simple, strategies
 from cloudisoft_lab.api.security import RateLimiter, SecurityMiddleware, UserService
 from cloudisoft_lab.core.config import Settings, get_settings
 from cloudisoft_lab.core.logging import configure_logging, get_logger
@@ -87,7 +87,7 @@ def create_app(settings: Settings | None = None, run_worker: bool | None = None)
                   for e in exc.errors()]
         return JSONResponse({"detail": errors}, status_code=422)
 
-    for r in (core.router, research.router, strategies.router, funds.router, governance.router):
+    for r in (core.router, simple.router, research.router, strategies.router, funds.router, governance.router):
         app.include_router(r)
     return app
 

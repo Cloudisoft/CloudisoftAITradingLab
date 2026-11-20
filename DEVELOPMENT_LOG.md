@@ -46,3 +46,22 @@
 - Tests: **119 passed** (3 consecutive runs). Ruff clean. Frontend: tsc + oxlint (3 cosmetic warnings) + build OK, code-split.
   Browser E2E: all 18 pages signed in, NL generation, news analysis, withdrawal approval. No console errors. No horizontal
   scroll at 390 px.
+
+## 2026-11-20: Session 3 (deployment and beginner-friendly app)
+- Deployed to Railway (project `cloudisoft-ai-trading-lab`: api, frontend, Postgres). Paper mode, live trading off.
+- Production bootstrap: DB-held JWT secret and encryption key when not configured, a first-run owner setup code
+  printed only in the server log (persisted until used), sealed plaintext owner password option.
+- Security fix: validation errors no longer echo submitted values (a password had been reflected back).
+- 2FA: QR code generated in the browser.
+- **New simple app** (default view), in the style of consumer trading apps but an original design: Home (balance,
+  bot sentence, watchlist, recent activity), Markets, Coin (TradingView Lightweight Charts candlesticks 1H/4H/1D with
+  volume, plain-English "What the AI sees", your holding), one-tap Buy/Sell sheet with live safety-check preview,
+  Orders, Bot (pause/resume, how it decides), More (sign in, add practice money, Pro tools, glossary).
+  The previous 18 screens remain as "Pro tools".
+- Backend: `/api/markets`, `/api/markets/{symbol}?tf=`, `/api/trade/preview`, `/api/trade` (same risk engine as the
+  bot), `/api/bot` (plain-English status + on/off), `/api/activity`; `explain.py` translates indicators and risk
+  reasons into plain language. Simulated prices now use realistic levels/volatility and current dates.
+- E2E (desktop 1360px + iPhone 13): sign in → open Bitcoin → buy $20 → confirmation; all tabs; no console errors;
+  no horizontal scroll. Bugs found and fixed: overflowing balance chart on phones, negative-money formatting,
+  wrapped watchlist label, January-2025 chart dates, overly volatile simulated prices.
+- Tests: 127 passed.

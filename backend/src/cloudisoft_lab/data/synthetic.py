@@ -12,7 +12,7 @@ from cloudisoft_lab.domain.enums import DataOrigin, MarketKind
 from cloudisoft_lab.markets.registry import Instrument
 
 REGIMES = {"trend_up": (0.0008, 0.006), "trend_down": (-0.0008, 0.006), "sideways": (0.0, 0.004),
-           "volatile": (0.0, 0.03)}
+           "volatile": (0.0, 0.03), "realistic": (0.00002, 0.007)}
 
 
 def make_ohlcv(n: int = 1000, regime: str = "sideways", start: float = 100.0, seed: int = 1,
@@ -33,6 +33,9 @@ def make_ohlcv(n: int = 1000, regime: str = "sideways", start: float = 100.0, se
     return pd.DataFrame({"open": open_, "high": high, "low": low, "close": close, "volume": volume}, index=idx)
 
 
+START_PRICES = {"BTCUSDT": 60000.0, "ETHUSDT": 3000.0, "SOLUSDT": 150.0, "BNBUSDT": 550.0}
+
+
 class SyntheticProvider:
     name = "synthetic"
     origin = DataOrigin.SIMULATED
@@ -45,8 +48,12 @@ class SyntheticProvider:
             raise ConnectionError("simulated provider outage")
         self._calls += 1
         # each call reveals a little more of a fixed path => a "live" feel, deterministic tests
-        df = make_ohlcv(limit + self._calls, self.regime, seed=self.seed + zlib.crc32(symbol.encode()) % 1000)
-        return df.iloc[-limit:]
+        df = make_ohlcv(limit + self._calls, self.regime, start=START_PRICES.get(symbol, 100.0),
+                        seed=self.seed + zlib.crc32(symbol.encode()) % 1000)
+        df = df.iloc[-limit:].copy()
+        # Anchor the simulated series to the present so charts show today's dates.
+        df.index = pd.date_range(end=pd.Timestamp.now(tz="UTC").floor("h"), periods=len(df), freq="h")
+        return df
 
     async def get_instrument(self, symbol: str) -> Instrument:
         return Instrument(symbol, MarketKind.CRYPTO, symbol[:-4], symbol[-4:], Decimal("0.00001"),

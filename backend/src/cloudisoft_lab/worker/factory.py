@@ -21,5 +21,5 @@ def build_lab(settings: Settings) -> Lab:
         # Real providers are added only after their official docs are verified (see
         # BROKER_INTEGRATION_MATRIX.md). Refuse rather than silently fall back.
         raise NotImplementedError(f"market data source {settings.market_data_source!r} not yet verified")
-    return Lab(settings, SyntheticProvider(regime="volatile", seed=42), ledger=ledger, llm=llm,
+    return Lab(settings, SyntheticProvider(regime="realistic", seed=42), ledger=ledger, llm=llm,
                news_feeds=settings.news_feeds)

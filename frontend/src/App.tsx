@@ -1,52 +1,72 @@
-import { lazy, Suspense, useState, type ComponentType } from 'react'
-import { usePoll } from './ui'
+import { lazy, Suspense, useEffect, useState } from 'react'
+import { BotScreen, Coin, Home, Markets, More, Orders } from './simple/Screens'
 
-const P = (f: () => Promise<{ default: ComponentType }>) => lazy(f)
-const NAV: { name: string; page: ComponentType }[] = [
-  { name: 'Overview', page: P(() => import('./pages/Overview')) },
-  { name: 'AI Command Centre', page: P(() => import('./pages/Command')) },
-  { name: 'Market Scanner', page: P(() => import('./pages/Overview')) },
-  { name: 'Market Data', page: P(() => import('./pages/MarketData')) },
-  { name: 'Strategy Lab', page: P(() => import('./pages/Strategy')) },
-  { name: 'Backtesting', page: P(() => import('./pages/Backtesting')) },
-  { name: 'AI Quant Research', page: P(() => import('./pages/Research')) },
-  { name: 'Paper Trading', page: P(() => import('./pages/Paper')) },
-  { name: 'Live Trading', page: P(() => import('./pages/Live')) },
-  { name: 'Portfolio', page: P(() => import('./pages/Paper')) },
-  { name: 'Broker Connections', page: P(() => import('./pages/Brokers')) },
-  { name: 'Wallet & Funds', page: P(() => import('./pages/Wallet')) },
-  { name: 'Profit Manager', page: P(() => import('./pages/Profit')) },
-  { name: 'Survival Engine', page: P(() => import('./pages/Survival')) },
-  { name: 'Agent Management', page: P(() => import('./pages/Agents')) },
-  { name: 'Reports', page: P(() => import('./pages/Reports')) },
-  { name: 'Security & Audit', page: P(() => import('./pages/Security')) },
-  { name: 'Settings', page: P(() => import('./pages/Settings')) },
+const ProApp = lazy(() => import('./ProApp'))
+
+type Route = { tab: string; coin?: string }
+const parse = (): Route => {
+  const [, tab = 'home', coin] = window.location.hash.replace(/^#/, '').split('/')
+  return { tab, coin }
+}
+
+const TABS = [
+  { id: 'home', label: 'Home', icon: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z' },
+  { id: 'markets', label: 'Markets', icon: 'M4 19V9m6 10V5m6 14v-7m4 7H2' },
+  { id: 'orders', label: 'Orders', icon: 'M7 4h10M7 9h10M7 14h6M5 2h14a1 1 0 0 1 1 1v18l-4-2-4 2-4-2-4 2V3a1 1 0 0 1 1-1z' },
+  { id: 'bot', label: 'Bot', icon: 'M9 3h6m-3 0v3M5 8h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2zm4 5h.01M15 13h.01' },
+  { id: 'more', label: 'More', icon: 'M5 12h.01M12 12h.01M19 12h.01' },
 ]
 
+function Icon({ d }: { d: string }) {
+  return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={d} /></svg>
+}
+
 export default function App() {
-  const [active, setActive] = useState('Overview')
-  const [open, setOpen] = useState(false)
-  const status = usePoll<{ kill_switch: boolean; live_trading_allowed: boolean }>('/api/system/status', 5000)
-  const Page = NAV.find(n => n.name === active)!.page
-  const signedIn = !!sessionStorage.getItem('clab_token')
+  const [route, setRoute] = useState<Route>(parse())
+  useEffect(() => {
+    const on = () => { setRoute(parse()); window.scrollTo(0, 0) }
+    window.addEventListener('hashchange', on)
+    return () => window.removeEventListener('hashchange', on)
+  }, [])
+  const go = (tab: string, coin?: string) => { window.location.hash = coin ? `/${tab}/${coin}` : `/${tab}` }
+  const open = (symbol: string) => go('coin', symbol)
+
+  if (route.tab === 'pro') return <Suspense fallback={<p className="p-6">Loading Pro tools…</p>}><ProApp onExit={() => go('more')} /></Suspense>
+
+  const active = route.tab === 'coin' ? 'markets' : route.tab
+  let screen
+  switch (route.tab) {
+    case 'markets': screen = <Markets open={open} />; break
+    case 'coin': screen = route.coin ? <Coin key={route.coin} symbol={route.coin} back={() => history.back()} /> : <Markets open={open} />; break
+    case 'orders': screen = <Orders />; break
+    case 'bot': screen = <BotScreen />; break
+    case 'more': screen = <More openPro={() => go('pro')} />; break
+    default: screen = <Home open={open} go={t => go(t)} />
+  }
   return (
-    <div className="flex min-h-screen">
-      <aside className={`${open ? 'block' : 'hidden'} fixed inset-y-0 z-20 w-64 shrink-0 overflow-y-auto border-r border-edge bg-panel p-4 md:static md:block`}>
-        <div className="mb-6"><div className="text-lg font-bold text-white">Cloudisoft</div><div className="text-xs text-slate-400">AI Trading Lab</div></div>
-        <nav className="space-y-0.5">{NAV.map(n => (
-          <button key={n.name} onClick={() => { setActive(n.name); setOpen(false) }} className={`block w-full rounded-lg px-3 py-1.5 text-left text-sm ${active === n.name ? 'bg-accent/20 text-white' : 'text-slate-400 hover:bg-edge/60'}`}>{n.name}</button>))}</nav>
-      </aside>
-      <main className="min-w-0 flex-1 p-4 md:p-6">
-        <header className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2"><button className="rounded border border-edge px-2 md:hidden" onClick={() => setOpen(!open)}>☰</button><h1 className="text-xl font-semibold text-white">{active}</h1></div>
-          <div className="flex flex-wrap gap-2 text-xs">
-            <span className="rounded-full bg-accent/20 px-3 py-1 font-semibold text-accent">MODE: PAPER</span>
-            <span className={`rounded-full px-3 py-1 font-semibold ${status.data?.live_trading_allowed ? 'bg-loss/20 text-loss' : 'bg-edge text-slate-400'}`}>LIVE: {status.data?.live_trading_allowed ? 'ENABLED' : 'DISABLED'}</span>
-            {status.data?.kill_switch && <span className="rounded-full bg-loss px-3 py-1 font-semibold text-white">KILL SWITCH ENGAGED</span>}
-            {!signedIn && <button onClick={() => setActive('Security & Audit')} className="rounded-full border border-warn/50 px-3 py-1 text-warn">Owner sign-in →</button>}
-          </div>
+    <div className="simple md:flex">
+      <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-card md:sticky md:top-0 md:h-screen md:w-60 md:shrink-0 md:border-t-0 md:border-r md:p-5">
+        <a href="#/home" className="mb-8 hidden items-center gap-2 md:flex" aria-label="Cloudisoft home">
+          <span className="grid h-9 w-9 place-items-center rounded-xl bg-violet text-white" style={{ fontFamily: 'var(--font-display)' }}>C</span>
+          <span className="text-lg font-semibold" style={{ fontFamily: 'var(--font-display)' }}>Cloudisoft</span>
+        </a>
+        <ul className="flex md:flex-col md:gap-1">
+          {TABS.map(t => (
+            <li key={t.id} className="flex-1">
+              <a href={`#/${t.id}`} aria-current={active === t.id ? 'page' : undefined}
+                className={`flex flex-col items-center gap-0.5 py-2 text-[11px] font-semibold md:flex-row md:gap-3 md:rounded-xl md:px-3 md:py-2.5 md:text-sm ${active === t.id ? 'text-violet md:bg-violet-soft' : 'text-muted hover:text-navy'}`}>
+                <Icon d={t.icon} />{t.label}
+              </a>
+            </li>))}
+        </ul>
+      </nav>
+      <main className="mx-auto w-full max-w-5xl px-4 pt-5 pb-24 md:px-8 md:pt-8 md:pb-10">
+        <header className="mb-4 flex items-center justify-between md:hidden">
+          <span className="flex items-center gap-2"><span className="grid h-8 w-8 place-items-center rounded-lg bg-violet text-sm text-white" style={{ fontFamily: 'var(--font-display)' }}>C</span>
+            <span className="font-semibold" style={{ fontFamily: 'var(--font-display)' }}>Cloudisoft</span></span>
+          <span className="rounded-full bg-violet-soft px-3 py-1 text-xs font-semibold text-violet">Practice</span>
         </header>
-        <Suspense fallback={<p className="text-slate-500">Loading…</p>}><Page /></Suspense>
+        {screen}
       </main>
     </div>
   )

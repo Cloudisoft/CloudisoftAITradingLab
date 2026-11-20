@@ -51,6 +51,7 @@ def snapshot(lab: Lab) -> dict[str, Any]:
         "v": SNAPSHOT_VERSION,
         "saved_at": dt.datetime.now(dt.UTC).isoformat(),
         "started_at": lab.started_at.isoformat(), "ticks": lab.ticks, "kill_switch": lab.kill_switch,
+        "bot_enabled": lab.bot_enabled,
         "paper": {
             "starting_cash": str(p.starting_cash), "cash": str(p.cash), "realised_pnl": str(p.realised_pnl),
             "fees_paid": str(p.fees_paid), "last_closed_trade_pnl": _d(p.last_closed_trade_pnl),
@@ -113,6 +114,7 @@ def restore(lab: Lab, data: dict[str, Any]) -> None:
     lab.closed_trades = [TradeStat(dt.datetime.fromisoformat(t), Decimal(v)) for t, v in data["closed_trades"]]
     lab.equity_curve = [tuple(x) for x in data["equity_curve"]]  # type: ignore[misc]
     lab.kill_switch, lab.ticks = data["kill_switch"], data["ticks"]
+    lab.bot_enabled = data.get("bot_enabled", True)
     lab.started_at = dt.datetime.fromisoformat(data["started_at"])
     lab.risk.config = RiskConfig.model_validate(data["risk_config"])
     lab.strategies.items = {r["id"]: StrategyRec(r["id"], r["name"], r["status"], [

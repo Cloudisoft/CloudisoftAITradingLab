@@ -22,10 +22,16 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
-export async function login(email: string, password: string) {
-  const body = new URLSearchParams({ username: email, password })
+export async function login(email: string, password: string, otp?: string) {
+  const body = new URLSearchParams({ username: email, password, ...(otp ? { otp } : {}) })
   const res = await fetch(BASE + '/api/auth/token', { method: 'POST', body })
   if (!res.ok) throw new Error('Login failed')
   const { access_token } = await res.json()
   sessionStorage.setItem('clab_token', access_token) // session only; never localStorage
 }
+
+export function logout() {
+  sessionStorage.removeItem('clab_token')
+}
+
+export const isSignedIn = () => !!sessionStorage.getItem('clab_token')
