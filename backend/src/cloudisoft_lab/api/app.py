@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -43,11 +44,21 @@ def create_app(settings: Settings | None = None, run_worker: bool | None = None)
         if settings.jwt_secret_is_default and settings.environment.value in ("staging", "production"):
             settings.jwt_secret = SecretStr(await persistent_secret(sessions, "jwt_secret"))
         key = settings.credential_encryption_key.get_secret_value() if settings.credential_encryption_key else None
+        if key is None and settings.environment.value in ("staging", "production"):
+            key = await persistent_secret(sessions, "credential_key")
+            log.warning("security.encryption_key_in_db",
+                        note="Set CLAB_CREDENTIAL_ENCRYPTION_KEY in the host's secret store for stronger encryption at rest")
         app.state.users = UserService(sessions, CredentialVault(key) if key else None)
         pw = settings.owner_password_hash.get_secret_value() if settings.owner_password_hash else None
         if pw is None and settings.owner_password:
             pw = hash_password(settings.owner_password.get_secret_value())
         await app.state.users.ensure_owner(settings.owner_email, pw)
+        app.state.setup_code = None
+        if not await app.state.users.owner_exists():
+            app.state.setup_code = secrets.token_hex(4).upper()
+            # Printed only to the server log (visible to the hosting account), never returned by the API.
+            log.warning("owner.setup_required", setup_code=app.state.setup_code,
+                        how="Open the dashboard > Security & Audit > Create owner account, and enter this code")
         app.state.lab = lab = build_lab(settings)
         app.state.store = store = StateStore(sessions)
         restored = await store.load(lab)  # RecoveryError aborts startup on a tampered audit chain

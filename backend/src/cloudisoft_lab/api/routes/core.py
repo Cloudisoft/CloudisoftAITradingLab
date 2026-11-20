@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import hmac
 from decimal import Decimal
 from typing import Annotated
 
@@ -48,6 +49,30 @@ async def token(form: Annotated[OAuth2PasswordRequestForm, Depends()], users: Us
     s = app_settings(request)
     return {"access_token": create_access_token(user.email, user.role, s.jwt_secret.get_secret_value(),
                                                 s.jwt_ttl_minutes), "token_type": "bearer", "role": user.role}
+
+
+@router.get("/api/setup/status")
+async def setup_status(users: Users) -> dict[str, bool]:
+    return {"owner_exists": await users.owner_exists()}
+
+
+class OwnerSetup(BaseModel):
+    setup_code: str = Field(min_length=4, max_length=32)
+    email: str = Field(pattern=r"^[^@\s]+@[^@\s]+$", max_length=255)
+    password: str = Field(min_length=12, max_length=200)
+
+
+@router.post("/api/setup/owner")
+async def setup_owner(body: OwnerSetup, users: Users, request: Request) -> dict[str, str]:
+    code = getattr(request.app.state, "setup_code", None)
+    if not code or not hmac.compare_digest(code, body.setup_code.strip().upper()):
+        raise HTTPException(403, "invalid or expired setup code (see the API server log)")
+    try:
+        await users.create_owner(body.email, body.password)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    request.app.state.setup_code = None  # single use
+    return {"created": body.email}
 
 
 @router.get("/api/system/status")

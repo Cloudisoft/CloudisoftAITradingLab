@@ -147,3 +147,25 @@ def test_settings_normalise_db_url_and_vault_derivation():
     assert v.decrypt(v.encrypt("s")) == "s"
     with pytest.raises(CredentialVaultError):
         CredentialVault("short")
+
+
+def test_first_run_owner_setup(tmp_path):
+    from cloudisoft_lab.core.config import Environment
+    s = Settings(database_url=f"sqlite+aiosqlite:///{tmp_path}/s.db", auto_migrate=False, environment=Environment.PRODUCTION)
+    app = create_app(s, run_worker=False)
+    with TestClient(app) as c:
+        assert c.get("/api/setup/status").json() == {"owner_exists": False}
+        code = app.state.setup_code
+        assert code and code not in c.get("/api/system/status").text  # never exposed via the API
+        body = {"setup_code": "WRONG123", "email": "me@x", "password": "a-very-long-pass"}
+        assert c.post("/api/setup/owner", json=body).status_code == 403
+        assert c.post("/api/setup/owner", json=body | {"setup_code": code, "password": "short"}).status_code == 422
+        assert c.post("/api/setup/owner", json=body | {"setup_code": code.lower()}).status_code == 200
+        assert c.post("/api/setup/owner", json=body | {"setup_code": code}).status_code == 403  # single use
+        assert c.get("/api/setup/status").json() == {"owner_exists": True}
+        tok = c.post("/api/auth/token", data={"username": "me@x", "password": "a-very-long-pass"}).json()["access_token"]
+        # auto-generated encryption key makes 2FA available without manual configuration
+        assert c.post("/api/users/me/totp", headers={"Authorization": f"Bearer {tok}"}).status_code == 200
+    with TestClient(create_app(Settings(database_url=f"sqlite+aiosqlite:///{tmp_path}/s.db", auto_migrate=False,
+                                        environment=Environment.PRODUCTION), run_worker=False)) as c2:
+        assert c2.app.state.setup_code is None  # owner exists, no new code printed

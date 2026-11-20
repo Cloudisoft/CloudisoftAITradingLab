@@ -48,7 +48,10 @@ export const money = (v: string | number | null | undefined, d = 4) =>
   v === null || v === undefined ? '—' : Number(v).toLocaleString(undefined, { maximumFractionDigits: d })
 
 export function ErrorNote({ error }: { error: string | null }) {
-  return error ? <p className="rounded-lg border border-loss/40 bg-loss/10 p-3 text-sm text-loss">Backend unavailable: {error}</p> : null
+  if (!error) return null
+  if (/\b(401|403)\b/.test(error))
+    return <p className="rounded-lg border border-warn/40 bg-warn/10 p-3 text-sm text-warn">Sign-in required: this page needs the owner (or an operator) to be signed in. Use "Owner sign-in →" at the top right.</p>
+  return <p className="rounded-lg border border-loss/40 bg-loss/10 p-3 text-sm text-loss">Backend unavailable: {error}</p>
 }
 
 export function Button({ children, onClick, tone = 'primary', disabled }: { children: ReactNode; onClick?: () => void; tone?: 'primary' | 'ghost' | 'danger'; disabled?: boolean }) {

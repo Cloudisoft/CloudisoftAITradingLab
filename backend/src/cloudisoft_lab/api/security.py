@@ -30,6 +30,19 @@ class UserService:
             if u is None:
                 s.add(User(email=email, password_hash=password_hash, role="owner"))
 
+    async def owner_exists(self) -> bool:
+        async with self.sessions() as s:
+            return await s.scalar(select(User).where(User.role == "owner")) is not None
+
+    async def create_owner(self, email: str, password: str) -> None:
+        if len(password) < 12:
+            raise ValueError("password must be at least 12 characters")
+        async with self.sessions() as s, s.begin():
+            if await s.scalar(select(User).where(User.role == "owner")) is not None:
+                raise ValueError("an owner already exists")
+            s.add(User(email=email, password_hash=hash_password(password), role="owner"))
+            s.add(SecurityEvent(kind="owner_created", severity="info", detail={"email": email}))
+
     async def authenticate(self, email: str, password: str, otp: str | None, ip: str | None) -> User | None:
         async with self.sessions() as s, s.begin():
             u = await s.scalar(select(User).where(User.email == email, User.is_active.is_(True)))
@@ -106,7 +119,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):  # type: ignore[no-untyped-def]
         ip = request.client.host if request.client else "unknown"
-        if request.url.path == "/api/auth/token" and not self.limiter.allow(f"login:{ip}", self.lpm, 60):
+        if request.url.path in ("/api/auth/token", "/api/setup/owner") and not self.limiter.allow(f"login:{ip}", self.lpm, 60):
             return JSONResponse({"detail": "too many login attempts"}, status_code=429)
         if request.method in ("POST", "PUT", "PATCH", "DELETE") and not self.limiter.allow(f"mut:{ip}", self.mpm, 60):
             return JSONResponse({"detail": "rate limit exceeded"}, status_code=429)

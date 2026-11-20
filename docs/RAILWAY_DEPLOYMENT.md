@@ -50,5 +50,9 @@ from trading. That needs owner funding or verified external revenue.
 | Mode | PAPER, $5 simulated balance, live trading off |
 
 Variables set by the deployer: environment, CORS, DB reference, paper settings, live-trading flags (false).
-**Variables the owner must set in the Railway dashboard (mark them sealed):** `CLAB_OWNER_EMAIL`,
-`CLAB_OWNER_PASSWORD`, `CLAB_CREDENTIAL_ENCRYPTION_KEY` (32+ random characters), and optionally `ANTHROPIC_API_KEY`.
+**Owner account, first run:** if no owner exists, the API prints a one-time `owner.setup_required` code in its
+deploy log. Open the dashboard → Security & Audit → "Create owner account", enter the code, your email and a 12+
+character password. The code works once and is never returned by the API. (Alternatively set `CLAB_OWNER_EMAIL` +
+`CLAB_OWNER_PASSWORD` as sealed variables.)
+**Encryption key:** if `CLAB_CREDENTIAL_ENCRYPTION_KEY` is unset in production, one is generated and kept in the
+database (logged as `security.encryption_key_in_db`). For stronger encryption at rest, set your own as a sealed variable.
