@@ -244,3 +244,13 @@ class AuditLog(Base):
     data: Mapped[dict]
     prev_hash: Mapped[str] = mapped_column(String(64))
     hash: Mapped[str] = mapped_column(String(64), unique=True)
+
+
+class SystemState(Base):
+    """Versioned snapshot of the running Lab, used for crash recovery (restore on restart)."""
+
+    __tablename__ = "system_state"
+    key: Mapped[str] = mapped_column(String(32), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    data: Mapped[dict]
+    updated_at: Mapped[dt.datetime]

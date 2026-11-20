@@ -28,5 +28,9 @@ SQLAlchemy 2 models: `backend/src/cloudisoft_lab/db/models.py`. Migration: `back
 | security_events | auth failures, kill switch, key events | |
 | audit_logs | hash-chained events | seq PK, hash unique |
 
-**Current gap:** the running `Lab` keeps state in memory. Wiring repositories so the ledger, orders and audit
-persist to these tables is the first task of M5 (TODO.md).
+| system_state | versioned JSON snapshot of the running Lab (crash recovery) | key PK |
+
+**Persistence (session 2):** after every paper tick and every owner action the Lab is snapshotted to `system_state`,
+and new audit events, ledger entries and survival transitions are appended to `audit_logs`, `survival_ledger` and
+`survival_state_history`. On startup the snapshot is restored and the audit hash chain verified. Migrations:
+`6b6dd8d91321` (initial) and `e0c11b6f6e4f` (system_state). Not persisted yet: uploaded CSV datasets.

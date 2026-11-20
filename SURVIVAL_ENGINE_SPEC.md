@@ -38,6 +38,12 @@ The swept share appears in exactly one bucket, so there is no double counting (a
 **PROFITABLE requires all of:** ≥ 30 days evaluated, ≥ 50 closed trades, net operating profit > 0, ≥ 60% of weekly
 periods net-positive, max drawdown ≤ 20%. All are configurable (`SurvivalConfig`), with floors of 7 days / 10 trades.
 
+## Inference cost control
+`LLMGateway` picks the model from the state: HIGH → `claude-opus-5-5` ($4/$20 per M tokens), NORMAL/PROFITABLE →
+`claude-sonnet-5-5` ($2/$10), LOW_COMPUTE/CRITICAL → `claude-haiku-5-5` ($0.10/$0.50), essential calls only; DEAD → none.
+Each call is checked against the agent's budget at worst-case cost before sending. The actual cost (from the served
+model's usage) is written as `ai_inference_cost` with the agent id. Without an API key every agent uses its rule-based fallback.
+
 ## Never
 Increase risk to survive · auto-deposit · auto-revive from DEAD · delete records or credentials · count
 deposits/unrealised/simulated gains as earnings.

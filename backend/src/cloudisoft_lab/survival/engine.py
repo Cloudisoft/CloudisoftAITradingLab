@@ -105,7 +105,7 @@ class SurvivalEngine:
         prof = self.profitability(now, trades or [], first_activity, max_drawdown)
         reasons: list[str] = []
 
-        if not self.ledger.entries:
+        if not self.ledger.has_actual_activity():
             new = SurvivalState.NORMAL
             reasons.append("no economic activity recorded yet; owner should record the operating budget")
         elif self.awaiting_owner_recovery:

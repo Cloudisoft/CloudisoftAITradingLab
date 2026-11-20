@@ -1,21 +1,18 @@
 # TODO
 
-## Blockers (owner action)
-- [ ] Allow-list or manually verify: developers.binance.com, kite.trade, sebi.gov.in, docs.railway.com
-- [ ] Decide Kite Connect subscription (paid) vs. starting with crypto only
-- [ ] Decide operating budget & trading capital. $5 can't cover hosting (see SURVIVAL_ENGINE_SPEC.md).
-- [ ] Approve a Railway deployment (project, Postgres, budget)
+## Owner decisions / blockers
+- [ ] Broker & exchange connections: **deferred by owner**. When resumed: verify official docs (developers.binance.com, kite.trade), then implement `CcxtExchange` and `KiteBroker` against `interfaces.py`.
+- [ ] Approve a Railway deployment (docs/RAILWAY_DEPLOYMENT.md) so the paper loop actually runs 24×7.
+- [ ] Decide operating budget and trading capital. Record real hosting costs in the ledger.
+- [ ] Optional: set `ANTHROPIC_API_KEY` to enable Claude-powered agents (costed against agent budgets).
+- [ ] Load exchange holiday lists (NSE/NYSE) yearly from official circulars (Settings → `/api/settings/holidays`).
 
-## Next engineering tasks (in order)
-- [ ] M5: persist Lab state (orders, fills, ledger, audit, survival history) via repositories. Restore on restart.
-- [ ] M5: DB-backed users, TOTP 2FA, rate limiting (slowapi or Redis), security headers
-- [ ] M6: `CcxtMarketData` public-data adapter (Binance) after doc verification. Candle cache.
-- [ ] M6: exchange holiday calendars (NSE/BSE, NYSE)
-- [ ] M8: NL → StrategyDefinition generator (LLM via ModelRouter, output validated by the pydantic schema)
-- [ ] M8: visual strategy builder UI. Strategy version persistence & comparison.
-- [ ] M9: limit orders that rest in the paper book, partial fills in the paper broker
-- [ ] M11: Wallet & Funds UI. Withdrawal request UI with confirmation checklist.
-- [ ] M12: daily/monthly reports. Owner notifications (email/Telegram).
-- [ ] Repo research: fetch stars, open security advisories, dependency trees
-- [ ] Frontend: code-split recharts (bundle 650 kB). Add a login gate before owner actions.
-- [ ] CI: GitHub Actions running ruff, pytest, frontend build, pip-audit/npm audit
+## Engineering backlog
+- [ ] Broker adapters + live market-data provider (blocked on the deferral above)
+- [ ] Redis-backed rate limiter if ever running >1 replica (currently single replica by design)
+- [ ] Persist uploaded datasets (currently in memory; re-upload after restart)
+- [ ] Paper broker: resting limit orders and partial fills (backtester already models partial fills)
+- [ ] Repo research: GitHub stars, open security advisories
+- [ ] Email/Telegram notification channels (webhook exists)
+- [ ] Docker image build check in CI (no Docker daemon in the build sandbox)
+- [ ] Frontend: split `ui.tsx` helpers to silence oxlint fast-refresh warnings (cosmetic)

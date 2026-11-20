@@ -15,6 +15,7 @@ An AI-assisted quantitative research, **paper-trading** and economic-survival pl
 | [SECURITY.md](SECURITY.md) | controls, API-key rules, compliance |
 | [SURVIVAL_ENGINE_SPEC.md](SURVIVAL_ENGINE_SPEC.md) | accounting formulas, states, the economics of $5 |
 | [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md) | tables |
+| [docs/RAILWAY_DEPLOYMENT.md](docs/RAILWAY_DEPLOYMENT.md) · [docs/OPERATIONS.md](docs/OPERATIONS.md) | deploy, kill switch, backup/restore, key rotation |
 | [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) · [TODO.md](TODO.md) · [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md) | progress |
 
 ## Quick start (Windows PowerShell or bash)

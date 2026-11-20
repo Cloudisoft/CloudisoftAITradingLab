@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import zlib
 from decimal import Decimal
 
 import numpy as np
@@ -44,7 +45,7 @@ class SyntheticProvider:
             raise ConnectionError("simulated provider outage")
         self._calls += 1
         # each call reveals a little more of a fixed path => a "live" feel, deterministic tests
-        df = make_ohlcv(limit + self._calls, self.regime, seed=self.seed + hash(symbol) % 1000)
+        df = make_ohlcv(limit + self._calls, self.regime, seed=self.seed + zlib.crc32(symbol.encode()) % 1000)
         return df.iloc[-limit:]
 
     async def get_instrument(self, symbol: str) -> Instrument:

@@ -4,15 +4,15 @@ import datetime as dt
 from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
 
-from cloudisoft_lab.api.deps import LabDep, Operator, Owner
+from cloudisoft_lab.api.deps import LabDep, Operator, Owner, Users, persist
 from cloudisoft_lab.backtest.engine import CostModel, run_backtest
 from cloudisoft_lab.backtest.validation import monte_carlo
 from cloudisoft_lab.core.config import get_settings
-from cloudisoft_lab.core.security import create_access_token, verify_password
+from cloudisoft_lab.core.security import create_access_token
 from cloudisoft_lab.data.synthetic import REGIMES, make_ohlcv
 from cloudisoft_lab.domain.enums import DataOrigin
 from cloudisoft_lab.markets.registry import MARKETS
@@ -39,15 +39,15 @@ async def ready(lab: LabDep) -> dict[str, object]:
 
 
 @router.post("/api/auth/token")
-async def token(form: Annotated[OAuth2PasswordRequestForm, Depends()]) -> dict[str, str]:
-    import os
-
-    email, pw_hash = os.environ.get("CLAB_OWNER_EMAIL"), os.environ.get("CLAB_OWNER_PASSWORD_HASH")
-    if not email or not pw_hash or form.username != email or not verify_password(form.password, pw_hash):
-        raise HTTPException(401, "invalid credentials")
+async def token(form: Annotated[OAuth2PasswordRequestForm, Depends()], users: Users, request: Request,
+                otp: Annotated[str | None, Form()] = None) -> dict[str, str]:
+    ip = request.client.host if request.client else None
+    user = await users.authenticate(form.username, form.password, otp, ip)
+    if user is None:
+        raise HTTPException(401, "invalid credentials or one-time code")
     s = get_settings()
-    return {"access_token": create_access_token(email, "owner", s.jwt_secret.get_secret_value(), s.jwt_ttl_minutes),
-            "token_type": "bearer"}
+    return {"access_token": create_access_token(user.email, user.role, s.jwt_secret.get_secret_value(),
+                                                s.jwt_ttl_minutes), "token_type": "bearer", "role": user.role}
 
 
 @router.get("/api/system/status")
@@ -55,7 +55,8 @@ async def status(lab: LabDep) -> dict[str, object]:
     s = get_settings()
     return {
         "mode": "paper", "live_trading_allowed": s.live_trading_allowed, "kill_switch": lab.kill_switch,
-        "started_at": lab.started_at.isoformat(), "ticks": lab.ticks, "strategy": lab.strategy.name,
+        "started_at": lab.started_at.isoformat(), "ticks": lab.ticks, "strategy": lab.active_strategy().name,
+        "llm_available": bool(lab.llm and lab.llm.available), "last_error": lab.last_error,
         "immutable_policy": {k: str(v) for k, v in IMMUTABLE.__dict__.items()},
         "markets": {k: {"paper": m.enabled_for_paper, "live": m.enabled_for_live, "notes": m.compliance_notes}
                     for k, m in MARKETS.items()},
@@ -67,11 +68,13 @@ class KillSwitchBody(BaseModel):
 
 
 @router.post("/api/system/kill-switch")
-async def kill_switch(body: KillSwitchBody, lab: LabDep, user: Operator) -> dict[str, bool]:
+async def kill_switch(body: KillSwitchBody, lab: LabDep, user: Operator, request: Request) -> dict[str, bool]:
     # any operator may ENGAGE; only the owner may release
     if not body.engaged and user["role"] != "owner":
         raise HTTPException(403, "only the owner can release the kill switch")
     lab.engage_kill_switch(user["sub"], body.engaged)
+    await lab.notifier.notify("kill_switch", f"{'engaged' if body.engaged else 'released'} by {user['sub']}", "critical")
+    await persist(request)
     return {"kill_switch": lab.kill_switch}
 
 
@@ -102,9 +105,10 @@ class AmountBody(BaseModel):
 
 
 @router.post("/api/paper/deposit")
-async def paper_deposit(body: AmountBody, lab: LabDep, user: Owner) -> dict[str, object]:
+async def paper_deposit(body: AmountBody, lab: LabDep, user: Owner, request: Request) -> dict[str, object]:
     rec = lab.paper.simulate_deposit(body.amount)
     lab.audit.record("paper.deposit", user["sub"], rec.model_dump(mode="json"))
+    await persist(request)
     return rec.model_dump(mode="json")
 
 
@@ -130,7 +134,7 @@ class LedgerBody(BaseModel):
 
 
 @router.post("/api/survival/ledger")
-async def add_ledger(body: LedgerBody, lab: LabDep, user: Owner) -> dict[str, str]:
+async def add_ledger(body: LedgerBody, lab: LabDep, user: Owner, request: Request) -> dict[str, str]:
     allowed = EXPENSES | {Entry.OWNER_FUNDING_OPERATIONS, Entry.OWNER_FUNDING_TRADING, Entry.EXTERNAL_REVENUE}
     if body.kind not in allowed:
         raise HTTPException(422, "trading P&L entries come from fills, not manual input")
@@ -138,13 +142,15 @@ async def add_ledger(body: LedgerBody, lab: LabDep, user: Owner) -> dict[str, st
         raise HTTPException(422, "external revenue requires a payment reference (verified receipt)")
     e = lab.ledger.add(body.kind, body.amount, memo=body.memo, agent_id=body.agent_id, reference=body.reference)
     lab.audit.record("ledger.add", user["sub"], {"kind": e.kind, "amount": str(e.amount)})
+    await persist(request)
     return {"ok": "recorded"}
 
 
 @router.post("/api/survival/recover")
-async def recover(lab: LabDep, user: Owner) -> dict[str, str]:
+async def recover(lab: LabDep, user: Owner, request: Request) -> dict[str, str]:
     lab.survival.owner_authorise_recovery(dt.datetime.now(dt.UTC), user["sub"])
     lab.audit.record("survival.recover", user["sub"], {})
+    await persist(request)
     return {"state": lab.survival_report().state}
 
 

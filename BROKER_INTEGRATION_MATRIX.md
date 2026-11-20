@@ -1,5 +1,9 @@
 # Broker & Exchange Integration Matrix
 
+> **Session 2:** the owner deferred all broker/exchange connections. The rows below are unchanged and remain
+> the plan for when connections resume. Until then Wallet & Funds shows these providers as "not connected", and
+> live withdrawals and live orders are refused.
+
 **Status legend:** ✅ implemented & tested · 🟡 designed, not implemented · ⛔ blocked · ❌ not supported / not allowed
 
 > No row below contains endpoint paths. The official documentation (developers.binance.com,

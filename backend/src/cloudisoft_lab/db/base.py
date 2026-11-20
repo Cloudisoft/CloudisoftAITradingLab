@@ -27,3 +27,11 @@ class IdMixin:
 def make_sessionmaker(url: str) -> async_sessionmaker[AsyncSession]:
     engine = create_async_engine(url, pool_pre_ping=True)
     return async_sessionmaker(engine, expire_on_commit=False)
+
+
+async def create_all(sessions: async_sessionmaker[AsyncSession]) -> None:
+    """Test/dev helper. Production uses Alembic (``alembic upgrade head``)."""
+    from cloudisoft_lab.db import models  # noqa: F401
+
+    async with sessions.kw["bind"].begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)

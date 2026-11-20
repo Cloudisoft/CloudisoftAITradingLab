@@ -50,7 +50,15 @@ frontend (React/Vite/Tailwind) ──HTTP──> FastAPI (api/)
 | `data/` | synthetic regimes, data-quality checks |
 | `db/` | SQLAlchemy 2 models, Alembic migrations |
 | `worker/` | `Lab` orchestrator and the 24×7 paper loop |
-| `api/` | FastAPI app, role-based deps, routes |
+| `api/` | FastAPI app, role-based deps, routes (core, research, strategies, funds, governance), security middleware, DB users + TOTP |
+| `ai/llm.py` | budget-aware Claude gateway: structured outputs, refusal fallback, survival-based model tier, ledger costing |
+| `agents/` (more) | news, sentiment, fundamental, strategy researcher (NL→DSL), portfolio, trade reviewer, improvement researcher |
+| `governance/` | proposal board (owner approvals), agent registry (budgets, cap), expansion assessment, revenue-opportunity desk |
+| `profit/wallet.py` | Wallet & Funds: accounts view, withdrawable balance, approval-gated simulated settlement |
+| `strategy/store.py` | immutable strategy versions, rollback, single active paper strategy |
+| `data/csv_provider.py` | validated CSV upload + replay provider |
+| `db/persistence.py` | crash-safe snapshot/restore with audit-chain verification |
+| `reports.py` | daily/monthly reports, owner notifier (webhook) |
 
 ## Backtest execution assumptions
 Signal on bar *t* close → fill at bar *t+1* open. Spread + slippage applied adversely. Fee per side.
@@ -61,10 +69,11 @@ Closed-market bars can't open trades. Orders below min-notional/step are skipped
 constituents), order-book depth.
 
 ## Agents
-Market Scanner, Technical Analyst: implemented (rule-based, no inference cost).
-Fundamental, News, Sentiment, Strategy Researcher (LLM), Portfolio Analyst, Trade Reviewer,
-Profit Manager (logic done), Survival Manager (logic done): see the roadmap. All communicate via
-`AgentMessage`, and none hold broker credentials.
+All 13 built-in agents are implemented and listed in the registry with isolated budgets and task logs:
+Market Scanner, Technical Analyst, News, Sentiment, Fundamental, Strategy Researcher, Portfolio Analyst,
+Risk Manager, Execution Manager, Trade Reviewer, Profit Manager, Survival Manager, Improvement Researcher.
+LLM-capable agents (news, sentiment, strategy researcher) go through `LLMGateway`. None hold broker
+credentials. None can place orders except through `ExecutionRouter` → `RiskEngine`.
 
 ## Decisions log
 | # | Decision | Why |
@@ -75,3 +84,9 @@ Profit Manager (logic done), Survival Manager (logic done): see the roadmap. All
 | ADR-4 | DEAD state latches until explicit owner recovery | "Do not automatically spend owner funds to revive" |
 | ADR-5 | Fresh install with empty ledger → NORMAL (not DEAD) | Found in E2E run: otherwise a new install locks itself |
 | ADR-6 | SQLite for dev/tests, PostgreSQL in Docker/Railway | Zero-setup local tests. Same Alembic migrations. |
+| ADR-7 | Persistence = JSON snapshot + normalised append rows | Exact restore of in-memory state. Normalised rows give an independent, queryable trail. |
+| ADR-8 | Single replica | Paper loop, kill switch and rate limiter are in-process. Scale-out would need Redis + leader election. |
+| ADR-9 | LLM optional, rule-based fallbacks everywhere | $5 capital can't fund inference. The system must be useful at $0 inference cost. |
+| ADR-10 | Simulated ledger entries don't count as "economic activity" | E2E bug: a paper fee made a fresh install DEAD |
+| ADR-11 | Strategy promotion, agent spawn, expansion, revenue lines, code changes all go through `ProposalBoard` | One owner-approval path, audited |
+| ADR-12 | Broker connections deferred (owner decision, session 2) | Interfaces stay stable. Adapters can be added later. |

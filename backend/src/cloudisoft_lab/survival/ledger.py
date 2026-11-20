@@ -67,6 +67,10 @@ class SurvivalLedger:
         self.entries.append(e)
         return e
 
+    def has_actual_activity(self) -> bool:
+        """True once any real (non-simulated) funding, cost or revenue has been recorded."""
+        return any(e.origin != DataOrigin.SIMULATED or self.count_simulated_pnl for e in self.entries)
+
     # ------------------------------------------------------------------
     def _sum(self, kinds: set[Entry] | Entry, since: dt.datetime | None = None,
              until: dt.datetime | None = None) -> Decimal:

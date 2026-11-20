@@ -119,7 +119,7 @@ def test_budget_exhaustion_reduces_model_costs():
     assert router.select(SurvivalState.LOW_COMPUTE) is None  # non-essential deferred
     assert router.select(SurvivalState.LOW_COMPUTE, essential=True) == "claude-haiku-5-5"
     assert router.select(SurvivalState.DEAD, essential=True) is None
-    assert router.cost("claude-haiku-5-5", 1_000_000, 0) == D(1)
+    assert router.cost("claude-haiku-5-5", 1_000_000, 0) == D("0.10")
 
 
 def test_cost_attribution():
@@ -165,3 +165,11 @@ def test_fresh_install_is_not_dead():
     assert r.state == SurvivalState.NORMAL and "operating budget" in r.reasons[0]
     e.ledger.add(Entry.HOSTING_COST, D(1), at=NOW)
     assert e.evaluate(NOW).state == SurvivalState.DEAD
+
+
+def test_simulated_entries_do_not_kill_unfunded_install():
+    """Regression (found in E2E): a paper fee on a fresh install flipped the engine to DEAD."""
+    e = SurvivalEngine(SurvivalLedger())
+    e.ledger.add(Entry.TRADING_FEE, D("0.01"), origin=DataOrigin.SIMULATED, at=NOW)
+    e.ledger.add(Entry.REALISED_TRADING_PNL, D("-1"), origin=DataOrigin.SIMULATED, at=NOW)
+    assert e.evaluate(NOW).state == SurvivalState.NORMAL

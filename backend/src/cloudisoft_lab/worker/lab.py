@@ -9,21 +9,37 @@ from decimal import Decimal
 
 import pandas as pd
 
+from cloudisoft_lab.agents.news import NewsAnalyst
 from cloudisoft_lab.agents.scanner import scan
+from cloudisoft_lab.ai.llm import LLMGateway
 from cloudisoft_lab.audit import AuditTrail
 from cloudisoft_lab.core.config import Settings
 from cloudisoft_lab.core.logging import get_logger
 from cloudisoft_lab.core.money import ZERO, floor_to_step
+from cloudisoft_lab.data.csv_provider import DatasetStore
 from cloudisoft_lab.data.quality import check_candles
 from cloudisoft_lab.domain.enums import DataOrigin, MarketKind, Side, TradingMode
 from cloudisoft_lab.domain.schemas import OrderRequest
 from cloudisoft_lab.execution.paper_broker import PaperBroker
 from cloudisoft_lab.execution.router import ExecutionRouter
+from cloudisoft_lab.governance.agents import AgentRegistry
+from cloudisoft_lab.governance.proposals import ProposalBoard
+from cloudisoft_lab.governance.revenue import RevenueDesk
 from cloudisoft_lab.interfaces import MarketDataProvider
 from cloudisoft_lab.markets.registry import MARKETS
+from cloudisoft_lab.profit.manager import (
+    WithdrawalPolicy,
+    WithdrawalRecommendation,
+    WithdrawalWorkflow,
+    recommend_withdrawal,
+)
+from cloudisoft_lab.profit.wallet import WalletService
+from cloudisoft_lab.reports import Notifier
 from cloudisoft_lab.risk.engine import RiskContext, RiskEngine
+from cloudisoft_lab.risk.policy import RiskConfig
 from cloudisoft_lab.strategy.evaluator import signals
 from cloudisoft_lab.strategy.schema import StrategyDefinition
+from cloudisoft_lab.strategy.store import StrategyStore
 from cloudisoft_lab.strategy.templates import ema_crossover
 from cloudisoft_lab.survival.engine import SurvivalEngine, SurvivalReport, TradeStat
 from cloudisoft_lab.survival.ledger import Entry, SurvivalLedger
@@ -45,6 +61,11 @@ class Lab:
     last_scan: list[dict[str, object]] = field(default_factory=list)
     closed_trades: list[TradeStat] = field(default_factory=list)
     equity_curve: list[tuple[str, float]] = field(default_factory=list)
+    owner_ids: set[str] = field(default_factory=lambda: {"owner"})
+    withdrawal_policy: WithdrawalPolicy = field(default_factory=WithdrawalPolicy)
+    llm: LLMGateway | None = None
+    news_feeds: list[str] = field(default_factory=list)
+    news: list[dict[str, object]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.paper = PaperBroker(Decimal(str(self.settings.paper_starting_balance_usd)))
@@ -52,8 +73,38 @@ class Lab:
         self.router = ExecutionRouter(self.risk, self.paper, self.audit)
         self.survival = SurvivalEngine(self.ledger)
         self.kill_switch = self.settings.kill_switch_engaged
+        self.strategies = StrategyStore()
+        self.board = ProposalBoard(self.owner_ids)
+        self.revenue = RevenueDesk()
+        self.agents = AgentRegistry()
+        self.workflow = WithdrawalWorkflow(self.owner_ids)
+        self.wallet = WalletService(self.paper, self.workflow)
+        self.datasets = DatasetStore()
+        self.notifier = Notifier(self.settings.owner_webhook_url)
+        if self.llm is None:
+            self.llm = LLMGateway(self.ledger)  # no backend => rule-based fallbacks
+        self.news_analyst = NewsAnalyst(self.news_feeds, self.llm)
+        rec = self.strategies.create(self.strategy, "system", "default template")
+        self.strategies.set_status(rec.id, "paper")
         self._start_of_day = (self.started_at.date(), self.paper.equity())
         self.audit.record("lab.start", "system", {"mode": "paper", "live_allowed": self.settings.live_trading_allowed})
+
+    # ---- owner-facing helpers --------------------------------------------
+    def active_strategy(self) -> StrategyDefinition:
+        rec = self.strategies.active()
+        return rec.latest.definition if rec else self.strategy
+
+    def set_risk_config(self, cfg: RiskConfig, actor: str) -> None:
+        old = self.risk.config.model_dump(mode="json")
+        self.risk.config = cfg
+        self.audit.record("risk.config_changed", actor, {"old": old, "new": cfg.model_dump(mode="json")})
+
+    def withdrawal_recommendation(self) -> WithdrawalRecommendation:
+        net = self.paper.realised_pnl - self.paper.fees_paid
+        return recommend_withdrawal(
+            original_capital=self.paper.starting_cash, current_cash=self.paper.cash, realised_net_profit=net,
+            locked_in_open_positions=self.paper.equity() - self.paper.cash, outstanding_obligations=Decimal(0),
+            policy=self.withdrawal_policy)
 
     # ------------------------------------------------------------------
     def survival_report(self, now: dt.datetime | None = None) -> SurvivalReport:
@@ -69,7 +120,14 @@ class Lab:
     async def tick(self, now: dt.datetime | None = None) -> dict[str, object]:
         now = now or dt.datetime.now(dt.UTC)
         self.ticks += 1
+        prev_state = self.survival.state
         report = self.survival_report(now)
+        if report.state != prev_state:
+            self.audit.record("survival.transition", "survival_manager",
+                              {"from": prev_state, "to": report.state, "reasons": report.reasons})
+            if report.policy.notify_owner or report.state == "PROFITABLE":
+                await self.notifier.notify("survival_state", f"{prev_state} -> {report.state}: {'; '.join(report.reasons)}",
+                                           "critical" if report.state in ("CRITICAL", "DEAD") else "warning")
         frames: dict[str, pd.DataFrame] = {}
         for sym in self.settings.paper_symbols:
             try:
@@ -86,13 +144,14 @@ class Lab:
             self.paper.mark(sym, Decimal(str(float(df["close"].iloc[-1]))))
         # Scanning is rule-based (no inference cost), so it runs in every state but DEAD.
         self.last_scan = [m.payload for m in scan(frames)] if report.policy.risk_monitoring else []
+        self.agents.log_task("market_scanner", "scan", "ok", symbols=len(frames))
 
         if now.date() != self._start_of_day[0]:
             self._start_of_day = (now.date(), self.paper.equity())
 
         actions = []
         for sym, df in frames.items():
-            sig = signals(df, self.strategy).iloc[-1]
+            sig = signals(df, self.active_strategy()).iloc[-1]
             held = self.paper.positions.get(sym)
             qty_held = held.qty if held else ZERO
             price = self.paper.marks[sym]
@@ -100,9 +159,9 @@ class Lab:
             qty = ZERO
             if qty_held > 0 and (sig["exit"] or self._protective_exit(sym, price)):
                 side, qty = Side.SELL, qty_held
-            elif qty_held == 0 and sig["entry"]:
+            elif qty_held == 0 and sig["entry"] and self.strategies.active() is not None:
                 inst = await self.provider.get_instrument(sym)
-                budget = self.paper.cash * Decimal(str(self.strategy.risk.position_fraction))
+                budget = self.paper.cash * Decimal(str(self.active_strategy().risk.position_fraction))
                 qty = floor_to_step(budget / (price * Decimal("1.002")), inst.qty_step)
                 side = Side.BUY if qty > 0 else None
             if side is None:
@@ -116,7 +175,7 @@ class Lab:
 
     def _protective_exit(self, sym: str, price: Decimal) -> bool:
         pos = self.paper.positions[sym]
-        r = self.strategy.risk
+        r = self.active_strategy().risk
         if r.stop_loss_pct and price <= pos.avg * (1 - Decimal(str(r.stop_loss_pct))):
             return True
         return bool(r.take_profit_pct and price >= pos.avg * (1 + Decimal(str(r.take_profit_pct))))
@@ -126,7 +185,8 @@ class Lab:
         inst = await self.provider.get_instrument(sym)
         held = self.paper.positions.get(sym)
         order = OrderRequest(mode=TradingMode.PAPER, market=MarketKind.CRYPTO, symbol=sym, side=side,
-                             quantity=qty, strategy_id=self.strategy.fingerprint(), requested_by="strategy_researcher")
+                             quantity=qty, strategy_id=self.active_strategy().fingerprint(),
+                             requested_by="strategy_researcher")
         ctx = RiskContext(
             now=now, market=MARKETS[MarketKind.CRYPTO], instrument=inst, reference_price=price,
             available_cash=self.paper.cash, equity=self.paper.equity(),
@@ -139,6 +199,9 @@ class Lab:
         )
         before = self.paper.realised_pnl
         res, decision = await self.router.submit(order, ctx)
+        self.agents.log_task("risk_manager", "evaluate", "approved" if decision.approved else "rejected",
+                             symbol=sym, reasons=decision.reasons[:3])
+        self.agents.log_task("execution_manager", "order", str(res.status), symbol=sym, side=str(side))
         if res.status == "filled":
             self.ledger.add(Entry.TRADING_FEE, res.fees, origin=DataOrigin.SIMULATED, at=now)
             if side == Side.SELL:
@@ -148,12 +211,14 @@ class Lab:
         return {"symbol": sym, "side": side, "qty": str(qty), "status": res.status,
                 "reasons": decision.reasons, "origin": res.origin}
 
-    async def run_forever(self) -> None:
+    async def run_forever(self, after_tick=None) -> None:  # type: ignore[no-untyped-def]
         log.info("paper_loop.start", symbols=self.settings.paper_symbols)
         while True:
             try:
                 out = await self.tick()
                 log.info("paper_loop.tick", **{k: str(v) for k, v in out.items()})
+                if after_tick is not None:
+                    await after_tick(self)
             except Exception as exc:  # never die silently; keep monitoring
                 self.last_error = str(exc)
                 log.exception("paper_loop.error")

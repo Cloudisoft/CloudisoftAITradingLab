@@ -68,11 +68,15 @@ def test_credential_vault():
     assert CredentialVault.mask("abcdefghijkl") == "abcd…ijkl"
 
 
+def app_settings(tmp_path, **kw):
+    return Settings(paper_starting_balance_usd=100.0, database_url=f"sqlite+aiosqlite:///{tmp_path}/t.db",
+                    auto_migrate=False, owner_email="owner@x", owner_password_hash=hash_password("pw-123456"),
+                    credential_encryption_key=CredentialVault.generate_key(), **kw)
+
+
 @pytest.fixture
-def client(monkeypatch):
-    monkeypatch.setenv("CLAB_OWNER_EMAIL", "owner@x")
-    monkeypatch.setenv("CLAB_OWNER_PASSWORD_HASH", hash_password("pw-123456"))
-    with TestClient(create_app(S, run_worker=False)) as c:
+def client(tmp_path):
+    with TestClient(create_app(app_settings(tmp_path), run_worker=False)) as c:
         yield c
 
 

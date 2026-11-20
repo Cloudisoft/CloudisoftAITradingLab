@@ -1,22 +1,24 @@
 # Implementation Roadmap
 
+Owner decision (session 2): **broker/exchange connections are deferred**. Everything else is built.
+
 | # | Milestone | Status |
 |---|---|---|
-| 1 | Environment & project audit | ✅ (cloud container; Windows checklist provided) |
-| 2 | Repository research & compatibility | ✅ licenses/activity verified; stars/advisories TODO |
+| 1 | Environment & project audit | ✅ |
+| 2 | Repository research & compatibility | ✅ (stars/advisories still TODO) |
 | 3 | Architecture, schema, security model | ✅ |
-| 4 | Backend & frontend foundations | ✅ FastAPI, Alembic, React dashboard, Docker/Railway config |
-| 5 | Auth, database, account management | 🟡 JWT + roles + vault done. DB-backed users, persistence, 2FA next. |
-| 6 | Market data & scanner | 🟡 scanner + data-quality done. Real provider blocked on docs. |
-| 7 | AI quant research modules | ⏳ News/Sentiment/Fundamental/LLM researcher via model router |
-| 8 | Strategy generation & backtesting | 🟡 DSL, templates, engine, walk-forward, Monte Carlo done. NL→DSL generator, visual builder next. |
-| 9 | Risk management & paper trading | 🟡 risk engine + paper broker + 24×7 paper loop done. Persistence pending. |
-| 10 | Broker connections & portfolio | ⛔ blocked: official docs unreachable here, keys needed |
-| 11 | Wallet & Funds, withdrawal approvals | 🟡 approval workflow done. UI + provider history pending. |
-| 12 | Profit Manager & Survival Engine | 🟡 logic + dashboard done. Reports, notifications pending. |
-| 13 | Self-improvement & expansion proposals | ⏳ |
-| 14 | Security, compliance & failure testing | 🟡 failure sims for outage, kill switch, budget exhaustion, duplicates done |
-| 15 | Railway deployment & docs | 🟡 Dockerfiles, compose, railway.json written. Not deployed (needs owner's Railway approval). |
+| 4 | Backend & frontend foundations | ✅ |
+| 5 | Auth, database, account management | ✅ DB users, roles, TOTP 2FA, login throttling, rate limits, security headers, crash-safe persistence |
+| 6 | Market data & scanner | ✅ scanner, data-quality gate, CSV upload + replay provider, holiday calendars · ⏸ live feeds (deferred with brokers) |
+| 7 | AI quant research | ✅ news, sentiment, fundamental, portfolio, trade reviewer. Budget-aware Claude gateway with rule-based fallback. |
+| 8 | Strategy generation & backtesting | ✅ NL→strategy (LLM + parser), visual builder, versioning/rollback, comparison, OOS, walk-forward, Monte Carlo |
+| 9 | Risk management & paper trading | ✅ |
+| 10 | Broker connections & portfolio | ⏸ connections deferred by owner · ✅ portfolio monitoring/analysis (paper) |
+| 11 | Wallet & Funds, withdrawal approvals | ✅ (paper provider; live providers report "not connected") |
+| 12 | Profit Manager & Survival Engine | ✅ + daily/monthly reports, owner notifications, revenue-opportunity desk |
+| 13 | Self-improvement & expansion | ✅ walk-forward-gated improvement proposals, agent registry with budgets and a hard cap, expansion assessment, owner-approval board |
+| 14 | Security, compliance & failure testing | ✅ failure simulations, pip-audit and npm audit clean, tamper-evident recovery |
+| 15 | Railway deployment & docs | ✅ docs/CI/Docker ready · ⏸ actual deploy awaits owner approval |
 
 ## Path to live trading (owner decisions required)
 1. Run the paper loop on **real** market data for ≥ 30 days (requires the market-data adapter).

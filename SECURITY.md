@@ -25,9 +25,26 @@
 * Never share broker passwords, banking passwords, PINs or OTPs with the platform or any agent.
 * Rotate keys on any suspicion. Each credential row tracks `rotated_at` / `revoked`.
 
-## Not yet implemented (tracked in TODO.md)
-TOTP 2FA, DB-backed users, rate limiting, CSRF review for cookie mode, security headers, persisted audit
-sink, backup/restore runbook, dependency scanning in CI, key-rotation UI.
+## Added in session 2
+| Control | Where |
+|---|---|
+| DB-backed users, owner bootstrap from env, operator/viewer roles, min 12-char passwords | `api/security.py` |
+| TOTP 2FA (secret encrypted at rest), required at login once enabled | `api/security.py`, `/api/users/me/totp` |
+| Login throttling 5/min/IP, mutation rate limit 60/min/IP | `SecurityMiddleware` |
+| Security headers (nosniff, DENY framing, no-referrer, no-store, HSTS) | `SecurityMiddleware` |
+| Security event log (login success/failure, 2FA enabled) | `security_events` table, `/api/security/events` |
+| Persisted audit trail, startup refuses a tampered chain | `db/persistence.py` |
+| Feed parser rejects entity declarations (XXE / billion-laughs) and >2 MB feeds | `agents/news.py` |
+| Revenue compliance guard (no promised returns, no unlicensed advice, no spam) | `governance/revenue.py` |
+| Agents can't self-replicate. Hard cap of 20. Spawn only via an owner-approved proposal. | `governance/agents.py` |
+| LLM spend capped per agent, refused in CRITICAL/DEAD | `ai/llm.py` |
+| CI: ruff (incl. bandit rules), pytest, pip-audit, npm audit | `.github/workflows/ci.yml` |
+| Backup/restore and key-rotation runbook | `docs/OPERATIONS.md` |
+
+Results on 2026-11-20: pip-audit **no known vulnerabilities**, npm audit **0 vulnerabilities**.
+
+## Remaining
+Key-rotation UI, Redis-backed limiter for multi-replica, CSP header for the static frontend (set at nginx/Railway).
 
 ## Compliance (must be verified by the owner, not assumed)
 * **India (SEBI):** retail algo trading via broker APIs is governed by SEBI's framework (broker-registered

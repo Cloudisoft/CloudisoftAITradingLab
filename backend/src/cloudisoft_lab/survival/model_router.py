@@ -8,12 +8,12 @@ from decimal import Decimal
 from cloudisoft_lab.domain.enums import SurvivalState
 from cloudisoft_lab.survival.engine import POLICIES
 
-# Prices are per million tokens (input, output) in USD and MUST be refreshed from the
-# provider's published price list before being used for real budgeting.
+# USD per million tokens (input, output), Anthropic first-party list prices as of 2026-11.
+# Re-check the published price list before relying on these for real budgeting.
 DEFAULT_MODEL_TIERS: dict[str, dict[str, object]] = {
-    "premium": {"model": "claude-opus-5-5", "in": Decimal("5"), "out": Decimal("25")},
-    "standard": {"model": "claude-sonnet-5-5", "in": Decimal("3"), "out": Decimal("15")},
-    "economy": {"model": "claude-haiku-5-5", "in": Decimal("1"), "out": Decimal("5")},
+    "premium": {"model": "claude-opus-5-5", "in": Decimal("4"), "out": Decimal("20")},
+    "standard": {"model": "claude-sonnet-5-5", "in": Decimal("2"), "out": Decimal("10")},
+    "economy": {"model": "claude-haiku-5-5", "in": Decimal("0.10"), "out": Decimal("0.50")},
 }
 
 

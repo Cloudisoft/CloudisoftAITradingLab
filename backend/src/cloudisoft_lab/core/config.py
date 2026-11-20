@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     market_data_source: str = "synthetic"  # "synthetic" | "binance_public"
 
     run_worker: bool = True
+    auto_migrate: bool = True  # run alembic upgrade on startup
+    owner_email: str | None = None
+    owner_password_hash: SecretStr | None = None
+    owner_webhook_url: str | None = None
+    news_feeds: list[str] = Field(default_factory=list)
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 
     @property
