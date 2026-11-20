@@ -38,3 +38,17 @@
 Record the real monthly Railway bill as `hosting_cost` (e.g. weekly). The survival engine will
 then report runway honestly. With $5 of trading capital, the platform can't pay its own hosting
 from trading. That needs owner funding or verified external revenue.
+
+## Current deployment (2026-11-20)
+| Item | Value |
+|---|---|
+| Railway project | `cloudisoft-ai-trading-lab` (environment `production`) |
+| API | https://api-production-72fd117e.up.railway.app (root `/backend`, health `/health`) |
+| Dashboard | https://frontend-production-103b76ea.up.railway.app (root `/frontend`) |
+| Database | Railway PostgreSQL (`CLAB_DATABASE_URL=${{Postgres.DATABASE_URL}}`, normalised to asyncpg) |
+| Source | GitHub `Cloudisoft/CloudisoftAITradingLab`, branch `claude/upbeat-newton-pi4w8q`, auto-deploy on push |
+| Mode | PAPER, $5 simulated balance, live trading off |
+
+Variables set by the deployer: environment, CORS, DB reference, paper settings, live-trading flags (false).
+**Variables the owner must set in the Railway dashboard (mark them sealed):** `CLAB_OWNER_EMAIL`,
+`CLAB_OWNER_PASSWORD`, `CLAB_CREDENTIAL_ENCRYPTION_KEY` (32+ random characters), and optionally `ANTHROPIC_API_KEY`.
