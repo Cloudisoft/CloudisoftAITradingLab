@@ -1,0 +1,25 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: clab
+      POSTGRES_USER: clab
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U clab"], interval: 5s, retries: 10 }
+  redis:
+    image: redis:7-alpine
+  api:
+    build: ./backend
+    env_file: .env
+    environment:
+      CLAB_DATABASE_URL: postgresql+asyncpg://clab:${POSTGRES_PASSWORD}@postgres:5432/clab
+      CLAB_REDIS_URL: redis://redis:6379/0
+      CLAB_CORS_ORIGINS: '["http://localhost:8080"]'
+    ports: ["8000:8000"]
+    depends_on: { postgres: { condition: service_healthy }, redis: { condition: service_started } }
+  frontend:
+    build: { context: ./frontend, args: { VITE_API_URL: "http://localhost:8000" } }
+    ports: ["8080:80"]
+volumes:
+  pgdata:
