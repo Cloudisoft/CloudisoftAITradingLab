@@ -119,7 +119,11 @@ class RiskEngine:
               f"quantity not a multiple of step {inst.qty_step}")
         check("min_notional", notional >= inst.min_notional,
               f"notional {notional:.4f} below exchange minimum {inst.min_notional}")
-        check("max_order_notional", notional <= cfg.max_order_notional, "order exceeds max notional")
+        # The per-order cap limits the automated bot. An owner placing a PAPER order by hand is not capped
+        # (funds, minimum size, exposure, kill switch and survival checks still apply). LIVE orders always are.
+        owner_paper = order.mode == TradingMode.PAPER and order.requested_by.startswith("owner:")
+        if not owner_paper:
+            check("max_order_notional", notional <= cfg.max_order_notional, "order exceeds max notional")
 
         if opening:
             check("funds", notional * (1 + ctx.fee_rate) <= ctx.available_cash,

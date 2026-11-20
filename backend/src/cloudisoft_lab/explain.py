@@ -51,13 +51,14 @@ REASONS = [
     ("insufficient funds", "Not enough practice money for this order."),
     ("below exchange minimum", "This order is too small. The minimum order size is $5."),
     ("uneconomical", "Fees would eat too much of this trade. Try a larger amount."),
-    ("exceed max exposure", "This would put too much of your money in one coin (max 50%)."),
+    ("exceed max exposure", "This would put more than half your money into one coin. "
+                            "You can change this limit in Pro tools > Settings > Risk limits."),
     ("too many open positions", "You already hold the maximum number of coins."),
     ("daily loss limit", "Today's loss limit is reached. New buys resume tomorrow."),
     ("martingale", "After a loss, the next buy can't be bigger than the last one."),
     ("short selling", "You can only sell coins you own."),
     ("market closed", "This market is closed right now."),
-    ("max notional", "Order is larger than the per-order limit."),
+    ("max notional", "The bot's per-trade limit was reached. You can change it in Pro tools > Settings > Risk limits."),
     ("not a multiple of step", "Amount doesn't fit the coin's smallest unit."),
     ("live trading gates", "Real-money trading is switched off."),
 ]

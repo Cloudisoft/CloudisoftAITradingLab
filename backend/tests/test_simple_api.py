@@ -31,7 +31,7 @@ def test_one_tap_trade_goes_through_risk_engine(tmp_path):
         small = c.post("/api/trade/preview", headers=h, json={"symbol": "BTCUSDT", "side": "buy", "amount_usd": "2"}).json()
         assert not small["approved"] and "minimum order size is $5" in small["friendly_reasons"][0]
         too_big = c.post("/api/trade/preview", headers=h, json={"symbol": "BTCUSDT", "side": "buy", "amount_usd": "80"}).json()
-        assert not too_big["approved"] and any("too much of your money" in r for r in too_big["friendly_reasons"])
+        assert not too_big["approved"] and any("more than half your money" in r for r in too_big["friendly_reasons"])
         done = c.post("/api/trade", headers=h, json={"symbol": "BTCUSDT", "side": "buy", "amount_usd": "20"}).json()
         assert done["status"] == "filled" and done["origin"] == "simulated"
         assert c.get("/api/markets/BTCUSDT").json()["holding"]["qty"] == done["qty"]
@@ -62,3 +62,12 @@ def test_small_balance_headline(tmp_path):
     s.paper_starting_balance_usd = 5.0
     with TestClient(create_app(s, run_worker=False)) as c:
         assert "below the $5 minimum" in c.get("/api/bot").json()["headline"]
+
+
+def test_owner_can_buy_more_than_bot_cap(tmp_path):
+    with make(tmp_path) as c:
+        h = login(c)
+        c.post("/api/paper/deposit", headers=h, json={"amount": "900"})  # $1,000 practice money
+        c.get("/api/markets")
+        r = c.post("/api/trade", headers=h, json={"symbol": "BTCUSDT", "side": "buy", "amount_usd": "300"}).json()
+        assert r["status"] == "filled", r  # above the bot's $100 per-order cap

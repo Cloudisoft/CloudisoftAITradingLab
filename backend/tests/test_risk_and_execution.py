@@ -166,3 +166,17 @@ def test_audit_tamper_detected():
     assert a.verify()
     a.events[0].data["v"] = 99
     assert not a.verify()
+
+
+def test_owner_manual_paper_orders_skip_per_order_cap(ctx):
+    big = ctx(available_cash=Decimal("100000"), equity=Decimal("100000"), start_of_day_equity=Decimal("100000"))
+    bot = order("0.01")  # $500 > default $100 cap
+    assert not RiskEngine().evaluate(bot, big).checks["max_order_notional"]
+    mine = order("0.01", requested_by="owner:me@x")
+    d = RiskEngine().evaluate(mine, big)
+    assert d.approved and "max_order_notional" not in d.checks
+    # still bound by funds and exposure
+    assert not RiskEngine().evaluate(order("1.5", requested_by="owner:me@x"), big).approved  # 75% in one coin
+    live = OrderRequest(mode=TradingMode.LIVE, market=MarketKind.CRYPTO, symbol="BTCUSDT", side=Side.BUY,
+                        quantity=Decimal("0.01"), requested_by="owner:me@x")
+    assert not RiskEngine().evaluate(live, big).checks["max_order_notional"]
