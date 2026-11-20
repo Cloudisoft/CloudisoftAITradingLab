@@ -180,3 +180,10 @@ def test_owner_manual_paper_orders_skip_per_order_cap(ctx):
     live = OrderRequest(mode=TradingMode.LIVE, market=MarketKind.CRYPTO, symbol="BTCUSDT", side=Side.BUY,
                         quantity=Decimal("0.01"), requested_by="owner:me@x")
     assert not RiskEngine().evaluate(live, big).checks["max_order_notional"]
+
+
+def test_survival_state_blocks_bot_but_not_owner_paper(ctx):
+    c = ctx(survival_state=SurvivalState.DEAD)
+    assert not RiskEngine().evaluate(order(), c).approved
+    assert RiskEngine().evaluate(order(requested_by="owner:me@x"), c).approved
+    assert not RiskEngine().evaluate(order(requested_by="owner:me@x"), ctx(kill_switch=True)).approved

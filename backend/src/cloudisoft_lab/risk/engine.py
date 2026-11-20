@@ -95,8 +95,11 @@ class RiskEngine:
         slip = notional * ctx.est_slippage * 2
         opening = order.side == Side.BUY
 
+        # Owner-placed PAPER orders: survival-state and per-order caps govern the automated bot, not the
+        # owner's own practice trades. Kill switch, funds, minimum size and exposure still apply. LIVE always checked.
+        owner_paper = order.mode == TradingMode.PAPER and order.requested_by.startswith("owner:")
         check("kill_switch", not ctx.kill_switch, "emergency kill switch engaged")
-        if opening:
+        if opening and not owner_paper:
             check("survival_allows_new_trades",
                   ctx.survival_state not in (SurvivalState.CRITICAL, SurvivalState.DEAD),
                   f"survival state {ctx.survival_state} forbids opening trades")
@@ -119,9 +122,6 @@ class RiskEngine:
               f"quantity not a multiple of step {inst.qty_step}")
         check("min_notional", notional >= inst.min_notional,
               f"notional {notional:.4f} below exchange minimum {inst.min_notional}")
-        # The per-order cap limits the automated bot. An owner placing a PAPER order by hand is not capped
-        # (funds, minimum size, exposure, kill switch and survival checks still apply). LIVE orders always are.
-        owner_paper = order.mode == TradingMode.PAPER and order.requested_by.startswith("owner:")
         if not owner_paper:
             check("max_order_notional", notional <= cfg.max_order_notional, "order exceeds max notional")
 

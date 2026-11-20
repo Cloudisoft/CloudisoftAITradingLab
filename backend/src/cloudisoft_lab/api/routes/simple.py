@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 from decimal import Decimal
 from typing import Literal
 
@@ -10,9 +11,10 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from cloudisoft_lab.agents.scanner import technical_snapshot
-from cloudisoft_lab.api.deps import LabDep, Operator, persist
+from cloudisoft_lab.api.deps import LabDep, Operator, Owner, persist
 from cloudisoft_lab.domain.enums import Side
 from cloudisoft_lab.explain import STATE_TEXT, coin_name, insights, reason
+from cloudisoft_lab.survival.ledger import Entry
 from cloudisoft_lab.worker.lab import Lab
 
 router = APIRouter(prefix="/api")
@@ -127,7 +129,8 @@ async def bot(lab: LabDep) -> dict[str, object]:
     elif not lab.bot_enabled:
         headline = "Your bot is paused. It will keep watching but won't buy."
     elif r.state in ("CRITICAL", "DEAD"):
-        headline = "Your bot has stopped buying to protect your budget."
+        headline = ("Your bot has stopped buying because its running-costs budget is used up. "
+                    "You can still trade yourself.")
     elif per_trade < min_order and not holding:
         headline = (f"Your bot is watching {len(lab.settings.paper_symbols)} coins, but ${per_trade:.2f} per trade "
                     f"is below the $5 minimum. Add practice money to let it trade.")
@@ -146,7 +149,30 @@ async def bot(lab: LabDep) -> dict[str, object]:
         "last_trade": {"side": last.side, "name": coin_name(last.symbol), "price": str(last.average_price),
                        "qty": str(last.filled_quantity)} if last else None,
         "per_trade_usd": float(per_trade), "practice_money": True,
+        "running_costs": {"spent": str(r.summary["operating_expenses"]),
+                          "budget": str(r.summary["owner_funding_operations"]),
+                          "left": str(r.survival_balance),
+                          "ai_spent": str(r.summary["ai_costs"])},
+        "needs_budget": r.state in ("DEAD", "CRITICAL", "LOW_COMPUTE"),
     }
+
+
+class BudgetBody(BaseModel):
+    amount: Decimal = Field(gt=0, le=Decimal(100000))
+
+
+@router.post("/bot/budget")
+async def bot_budget(body: BudgetBody, lab: LabDep, user: Owner, request: Request) -> dict[str, object]:
+    """Owner sets aside real money for running costs (AI, hosting). Recorded as owner funding, never revenue.
+    If the agent was stopped (DEAD), this is also the owner's explicit authorisation to restart it."""
+    now = dt.datetime.now(dt.UTC)
+    lab.ledger.add(Entry.OWNER_FUNDING_OPERATIONS, body.amount, memo="owner budget via app", at=now)
+    if lab.survival.awaiting_owner_recovery:
+        lab.survival.owner_authorise_recovery(now, user["sub"])
+    lab.audit.record("bot.budget", user["sub"], {"amount": str(body.amount)})
+    r = lab.survival_report(now)
+    await persist(request)
+    return {"state": r.state, "health": STATE_TEXT.get(r.state, r.state), "left": str(r.survival_balance)}
 
 
 class BotToggle(BaseModel):

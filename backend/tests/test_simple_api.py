@@ -71,3 +71,20 @@ def test_owner_can_buy_more_than_bot_cap(tmp_path):
         c.get("/api/markets")
         r = c.post("/api/trade", headers=h, json={"symbol": "BTCUSDT", "side": "buy", "amount_usd": "300"}).json()
         assert r["status"] == "filled", r  # above the bot's $100 per-order cap
+
+
+def test_dead_state_blocks_bot_not_owner_and_budget_restarts(tmp_path):
+    from cloudisoft_lab.survival.ledger import Entry
+    with make(tmp_path) as c:
+        h = login(c)
+        lab = c.app.state.lab
+        lab.ledger.add(Entry.AI_INFERENCE_COST, Decimal("0.02"), agent_id="strategy_researcher")  # real AI spend, no budget
+        b = c.get("/api/bot").json()
+        assert b["state"] == "DEAD" and b["needs_budget"] and "used up" in b["headline"]
+        c.get("/api/markets")
+        r = c.post("/api/trade", headers=h, json={"symbol": "BTCUSDT", "side": "buy", "amount_usd": "20"}).json()
+        assert r["status"] == "filled"  # owner's practice trade still allowed
+        out = c.post("/api/bot/budget", headers=h, json={"amount": "10"}).json()
+        assert out["state"] != "DEAD" and Decimal(out["left"]) == Decimal("9.98")
+        s = c.get("/api/survival").json()["summary"]
+        assert s["verified_external_revenue"] == "0"  # budget is funding, never revenue

@@ -5,7 +5,7 @@ import { CandleChart, CoinBadge, SignIn, Spark, pct, refreshAll, tone, usd, useD
 
 export type Market = { symbol: string; name: string; price: number; change_24h: number | null; spark: number[]; holding_qty: string | null }
 type Overview = { account_value: string; available_capital: string; realised_pnl: string; unrealised_pnl: string; equity_curve: [string, number][] }
-type Bot = { headline: string; enabled: boolean; paused: boolean; kill_switch: boolean; health: string; state: string; strategy: string | null; strategy_plain: string | null; checks_every_minutes: number; last_trade: { side: string; name: string; price: string; qty: string } | null; per_trade_usd: number }
+type Bot = { running_costs: { spent: string; budget: string; left: string; ai_spent: string }; needs_budget: boolean; headline: string; enabled: boolean; paused: boolean; kill_switch: boolean; health: string; state: string; strategy: string | null; strategy_plain: string | null; checks_every_minutes: number; last_trade: { side: string; name: string; price: string; qty: string } | null; per_trade_usd: number }
 type Act = { status: string; side: string; name: string; qty: string; price: string | null; fees: string; reason: string | null; ref: string | null }
 
 const H = ({ children }: { children: React.ReactNode }) => <h2 className="mb-3 text-base font-semibold" style={{ fontFamily: 'var(--font-display)' }}>{children}</h2>
@@ -36,14 +36,17 @@ export function BotCard({ compact = false, onOpen }: { compact?: boolean; onOpen
   const b = useData<Bot>('/api/bot', 10000)
   if (!b.data) return null
   const d = b.data
+  const stopped = d.state === 'DEAD' || d.state === 'CRITICAL'
+  const status = !d.enabled ? 'Your bot is off' : stopped ? 'Your bot has stopped buying' : 'Your bot is on'
+  const every = d.checks_every_minutes < 1 ? 'every few seconds' : d.checks_every_minutes === 1 ? 'every minute' : `every ${d.checks_every_minutes} minutes`
   return (
     <section className="rounded-3xl bg-violet p-5 text-white">
       <div className="mb-2 flex items-center gap-2 text-sm text-white/80">
-        <span className={`inline-block h-2.5 w-2.5 rounded-full ${d.enabled ? 'bg-emerald-300' : 'bg-amber-300'}`} aria-hidden />
-        {d.enabled ? 'Your bot is on' : 'Your bot is off'}
+        <span className={`inline-block h-2.5 w-2.5 rounded-full ${d.enabled && !stopped ? 'bg-emerald-300' : 'bg-amber-300'}`} aria-hidden />
+        {status}
       </div>
       <p className="text-xl leading-snug font-semibold md:text-2xl" style={{ fontFamily: 'var(--font-display)' }}>{d.headline}</p>
-      {!compact && <p className="mt-2 text-sm text-white/80">{d.health} Checks prices every {d.checks_every_minutes} minutes.</p>}
+      {!compact && <p className="mt-2 text-sm text-white/80">{d.health} Checks prices {every}.</p>}
       {onOpen && <button onClick={onOpen} className="mt-4 rounded-full bg-white/15 px-4 py-2 text-sm font-semibold hover:bg-white/25">See what it's doing</button>}
     </section>
   )
@@ -202,6 +205,7 @@ export function BotScreen() {
         <button onClick={toggle} className={`w-full rounded-2xl py-3.5 font-semibold ${d.enabled ? 'bg-card text-navy' : 'bg-up text-white'}`}>
           {d.enabled ? 'Pause the bot' : 'Turn the bot on'}</button>)}
       {msg && <p className="text-sm text-down">{msg}</p>}
+      {d && <RunningCosts bot={d} />}
       <Panel>
         <H>How it decides</H>
         <p className="text-sm">{d?.strategy_plain ?? 'No strategy is active. Pick one in Pro tools → Strategy Lab.'}</p>
@@ -257,5 +261,36 @@ export function More({ openPro }: { openPro: () => void }) {
         </dl>
       </Panel>
     </div>
+  )
+}
+
+function RunningCosts({ bot }: { bot: Bot }) {
+  const [amt, setAmt] = useState('10')
+  const [msg, setMsg] = useState<string | null>(null)
+  const c = bot.running_costs
+  const save = async () => {
+    try {
+      const r = await api<{ health: string }>('/api/bot/budget', { method: 'POST', body: JSON.stringify({ amount: amt }) })
+      setMsg(`Saved. ${r.health}`); refreshAll()
+    } catch { setMsg('Only the owner can set the budget. Sign in first (More tab).') }
+  }
+  return (
+    <Panel className={bot.needs_budget ? 'ring-2 ring-amber-400' : ''}>
+      <H>Running costs</H>
+      <p className="text-sm text-muted">The AI features cost real money (paid to Anthropic) and so does hosting. The bot keeps itself running only while it has a budget for these. Practice trading itself costs nothing.</p>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+        <div><p className="text-muted">Budget set</p><p className="num font-semibold">{usd(c.budget)}</p></div>
+        <div><p className="text-muted">Spent</p><p className="num font-semibold">{usd(c.spent)}</p></div>
+        <div><p className="text-muted">Left</p><p className={`num font-semibold ${Number(c.left) <= 0 ? 'text-down' : ''}`}>{usd(c.left)}</p></div>
+      </div>
+      {bot.needs_budget && <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">The budget is used up or nearly used up, so the bot has stopped buying. Set aside a budget to restart it. You can still trade yourself.</p>}
+      <div className="mt-3 flex gap-2">
+        <div className="flex flex-1 items-center rounded-xl border border-line bg-canvas px-3"><span className="text-muted">$</span>
+          <input aria-label="Running-costs budget in dollars" value={amt} inputMode="decimal" onChange={e => setAmt(e.target.value.replace(/[^\d.]/g, ''))} className="no-ring num w-full bg-transparent px-2 py-2.5 outline-none" /></div>
+        <button onClick={save} className="rounded-xl bg-violet px-4 font-semibold text-white">Set aside</button>
+      </div>
+      <p className="mt-2 text-xs text-muted">This records money you set aside for running costs; it doesn't charge your card. Pay the actual bills in your Anthropic and Railway accounts.</p>
+      {msg && <p className="mt-2 text-sm">{msg}</p>}
+    </Panel>
   )
 }
