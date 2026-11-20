@@ -123,3 +123,27 @@ def test_api_backtest(client):
 def test_api_audit(client):
     a = client.get("/api/audit").json()
     assert a["verified"] and a["events"][0]["event"] == "lab.start"
+
+
+def test_production_bootstrap(tmp_path, monkeypatch):
+    from cloudisoft_lab.core.config import Environment
+    s = Settings(database_url=f"sqlite+aiosqlite:///{tmp_path}/p.db", auto_migrate=False, environment=Environment.PRODUCTION,
+                 owner_email="o@x", owner_password="a-long-owner-password")
+    assert s.jwt_secret_is_default
+    with TestClient(create_app(s, run_worker=False)) as c:
+        r = c.post("/api/auth/token", data={"username": "o@x", "password": "a-long-owner-password"})
+        assert r.status_code == 200
+        assert not s.jwt_secret_is_default  # generated + persisted secret replaced the dev default
+        first = s.jwt_secret.get_secret_value()
+    s2 = Settings(database_url=f"sqlite+aiosqlite:///{tmp_path}/p.db", auto_migrate=False, environment=Environment.PRODUCTION)
+    with TestClient(create_app(s2, run_worker=False)):
+        assert s2.jwt_secret.get_secret_value() == first  # stable across restarts
+
+
+def test_settings_normalise_db_url_and_vault_derivation():
+    assert Settings(database_url="postgresql://u:p@h:5432/d").database_url == "postgresql+asyncpg://u:p@h:5432/d"
+    assert Settings(database_url="postgres://u@h/d").database_url.startswith("postgresql+asyncpg://")
+    v = CredentialVault("x" * 40)
+    assert v.decrypt(v.encrypt("s")) == "s"
+    with pytest.raises(CredentialVaultError):
+        CredentialVault("short")

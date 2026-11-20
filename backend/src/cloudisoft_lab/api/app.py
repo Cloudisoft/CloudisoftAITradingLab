@@ -6,14 +6,15 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import SecretStr
 
 from cloudisoft_lab.api.routes import core, funds, governance, research, strategies
 from cloudisoft_lab.api.security import RateLimiter, SecurityMiddleware, UserService
 from cloudisoft_lab.core.config import Settings, get_settings
 from cloudisoft_lab.core.logging import configure_logging, get_logger
-from cloudisoft_lab.core.security import CredentialVault
+from cloudisoft_lab.core.security import CredentialVault, hash_password
 from cloudisoft_lab.db.base import create_all, make_sessionmaker
-from cloudisoft_lab.db.persistence import StateStore
+from cloudisoft_lab.db.persistence import StateStore, persistent_secret
 from cloudisoft_lab.worker.factory import build_lab
 
 log = get_logger(__name__)
@@ -38,9 +39,14 @@ def create_app(settings: Settings | None = None, run_worker: bool | None = None)
             await asyncio.to_thread(_migrate)
         else:
             await create_all(sessions)
+        app.state.settings = settings
+        if settings.jwt_secret_is_default and settings.environment.value in ("staging", "production"):
+            settings.jwt_secret = SecretStr(await persistent_secret(sessions, "jwt_secret"))
         key = settings.credential_encryption_key.get_secret_value() if settings.credential_encryption_key else None
         app.state.users = UserService(sessions, CredentialVault(key) if key else None)
         pw = settings.owner_password_hash.get_secret_value() if settings.owner_password_hash else None
+        if pw is None and settings.owner_password:
+            pw = hash_password(settings.owner_password.get_secret_value())
         await app.state.users.ensure_owner(settings.owner_email, pw)
         app.state.lab = lab = build_lab(settings)
         app.state.store = store = StateStore(sessions)

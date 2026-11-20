@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import datetime as dt
+import hashlib
 from typing import Any
 
 import jwt
@@ -25,7 +27,14 @@ class CredentialVault:
             raise CredentialVaultError(
                 "CLAB_CREDENTIAL_ENCRYPTION_KEY is not set; refusing to store credentials."
             )
-        self._fernet = Fernet(key if isinstance(key, bytes) else key.encode())
+        raw = key if isinstance(key, bytes) else key.encode()
+        try:
+            self._fernet = Fernet(raw)
+        except ValueError:
+            # Any high-entropy string (e.g. a platform-generated secret) is accepted; derive a Fernet key.
+            if len(raw) < 32:
+                raise CredentialVaultError("encryption key must be at least 32 characters") from None
+            self._fernet = Fernet(base64.urlsafe_b64encode(hashlib.sha256(raw).digest()))
 
     @staticmethod
     def generate_key() -> str:

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
 
-from cloudisoft_lab.api.deps import LabDep, Operator, Owner, Users, persist
+from cloudisoft_lab.api.deps import LabDep, Operator, Owner, Users, app_settings, persist
 from cloudisoft_lab.backtest.engine import CostModel, run_backtest
 from cloudisoft_lab.backtest.validation import monte_carlo
 from cloudisoft_lab.core.config import get_settings
@@ -45,7 +45,7 @@ async def token(form: Annotated[OAuth2PasswordRequestForm, Depends()], users: Us
     user = await users.authenticate(form.username, form.password, otp, ip)
     if user is None:
         raise HTTPException(401, "invalid credentials or one-time code")
-    s = get_settings()
+    s = app_settings(request)
     return {"access_token": create_access_token(user.email, user.role, s.jwt_secret.get_secret_value(),
                                                 s.jwt_ttl_minutes), "token_type": "bearer", "role": user.role}
 

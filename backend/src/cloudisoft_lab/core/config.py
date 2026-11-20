@@ -10,7 +10,7 @@ from __future__ import annotations
 from enum import StrEnum
 from functools import lru_cache
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -54,9 +54,24 @@ class Settings(BaseSettings):
     auto_migrate: bool = True  # run alembic upgrade on startup
     owner_email: str | None = None
     owner_password_hash: SecretStr | None = None
+    # Alternative to the hash: set as a sealed Railway variable; hashed with argon2 at startup, never stored.
+    owner_password: SecretStr | None = None
     owner_webhook_url: str | None = None
     news_feeds: list[str] = Field(default_factory=list)
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
+
+    @field_validator("database_url")
+    @classmethod
+    def _async_driver(cls, v: str) -> str:
+        """Accept a provider's plain Postgres URL (e.g. Railway's DATABASE_URL) and use the asyncpg driver."""
+        for prefix in ("postgres://", "postgresql://"):
+            if v.startswith(prefix):
+                return "postgresql+asyncpg://" + v[len(prefix):]
+        return v
+
+    @property
+    def jwt_secret_is_default(self) -> bool:
+        return self.jwt_secret.get_secret_value().startswith("dev-only")
 
     @property
     def live_trading_allowed(self) -> bool:

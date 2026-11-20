@@ -7,7 +7,7 @@
 ## What runs
 | Service | Source | Notes |
 |---|---|---|
-| `api` | `backend/Dockerfile` (`railway.json`) | FastAPI + the 24×7 **paper** loop in-process. Runs `alembic upgrade head` on start. **Exactly 1 replica**: the paper loop, rate limiter and kill switch are in-process. |
+| `api` | root directory `/backend`, its `Dockerfile` | FastAPI + the 24×7 **paper** loop in-process. Runs `alembic upgrade head` on start. **Exactly 1 replica**: the paper loop, rate limiter and kill switch are in-process. |
 | `frontend` | `frontend/Dockerfile` | Static nginx. Build arg `VITE_API_URL=https://<api domain>`. |
 | PostgreSQL | Railway Postgres plugin | Snapshot + audit + ledger tables. Enable backups. |
 
@@ -19,9 +19,9 @@
    | Variable | Value |
    |---|---|
    | `CLAB_ENVIRONMENT` | `production` |
-   | `CLAB_JWT_SECRET` | `python -c "import secrets;print(secrets.token_urlsafe(48))"` |
-   | `CLAB_CREDENTIAL_ENCRYPTION_KEY` | `python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"` |
-   | `CLAB_OWNER_EMAIL` / `CLAB_OWNER_PASSWORD_HASH` | owner login (argon2 hash, see `.env.example`) |
+   | `CLAB_JWT_SECRET` | optional. If unset in production, a random secret is generated on first boot and kept in the database. |
+   | `CLAB_CREDENTIAL_ENCRYPTION_KEY` | any random string of 32+ characters (needed for 2FA). Mark it sealed. |
+   | `CLAB_OWNER_EMAIL` + `CLAB_OWNER_PASSWORD` (sealed) | owner login. The password is argon2-hashed at startup. `CLAB_OWNER_PASSWORD_HASH` also works. |
    | `CLAB_CORS_ORIGINS` | `["https://<frontend domain>"]` |
    | `CLAB_LOG_JSON` | `true` |
    | `CLAB_PAPER_STARTING_BALANCE_USD` | e.g. `5` |

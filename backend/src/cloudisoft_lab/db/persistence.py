@@ -196,3 +196,17 @@ class StateStore:
 
 
 __all__ = ["OrderStatus", "Side", "StateStore", "restore", "snapshot"]
+
+
+async def persistent_secret(sessions: async_sessionmaker[AsyncSession], name: str) -> str:
+    """Generate-once server secret kept in the database (used when none is configured), so no
+    secret has to be typed or pasted anywhere. Survives restarts; rotate by deleting the row."""
+    import secrets
+
+    async with sessions() as s, s.begin():
+        row = await s.get(SystemState, f"secret:{name}")
+        if row is None:
+            row = SystemState(key=f"secret:{name}", version=1, data={"value": secrets.token_urlsafe(48)},
+                              updated_at=dt.datetime.now(dt.UTC))
+            s.add(row)
+        return str(row.data["value"])

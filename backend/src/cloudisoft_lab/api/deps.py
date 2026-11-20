@@ -6,7 +6,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from cloudisoft_lab.api.security import UserService
-from cloudisoft_lab.core.config import get_settings
+from cloudisoft_lab.core.config import Settings, get_settings
 from cloudisoft_lab.core.security import decode_access_token
 from cloudisoft_lab.db.persistence import StateStore
 from cloudisoft_lab.worker.lab import Lab
@@ -29,11 +29,16 @@ async def persist(request: Request) -> None:
         await store.save(request.app.state.lab)
 
 
-def current_user(creds: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)]) -> dict[str, str]:
+def app_settings(request: Request) -> Settings:
+    return getattr(request.app.state, "settings", None) or get_settings()
+
+
+def current_user(request: Request,
+                 creds: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)]) -> dict[str, str]:
     if creds is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "authentication required")
     try:
-        return decode_access_token(creds.credentials, get_settings().jwt_secret.get_secret_value())
+        return decode_access_token(creds.credentials, app_settings(request).jwt_secret.get_secret_value())
     except Exception as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid token") from exc
 
