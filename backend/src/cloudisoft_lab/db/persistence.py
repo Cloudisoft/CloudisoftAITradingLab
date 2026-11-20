@@ -198,7 +198,7 @@ class StateStore:
 __all__ = ["OrderStatus", "Side", "StateStore", "restore", "snapshot"]
 
 
-async def persistent_secret(sessions: async_sessionmaker[AsyncSession], name: str) -> str:
+async def persistent_secret(sessions: async_sessionmaker[AsyncSession], name: str, factory=None) -> str:  # type: ignore[no-untyped-def]
     """Generate-once server secret kept in the database (used when none is configured), so no
     secret has to be typed or pasted anywhere. Survives restarts; rotate by deleting the row."""
     import secrets
@@ -206,7 +206,15 @@ async def persistent_secret(sessions: async_sessionmaker[AsyncSession], name: st
     async with sessions() as s, s.begin():
         row = await s.get(SystemState, f"secret:{name}")
         if row is None:
-            row = SystemState(key=f"secret:{name}", version=1, data={"value": secrets.token_urlsafe(48)},
+            value = factory() if factory else secrets.token_urlsafe(48)
+            row = SystemState(key=f"secret:{name}", version=1, data={"value": value},
                               updated_at=dt.datetime.now(dt.UTC))
             s.add(row)
         return str(row.data["value"])
+
+
+async def delete_secret(sessions: async_sessionmaker[AsyncSession], name: str) -> None:
+    async with sessions() as s, s.begin():
+        row = await s.get(SystemState, f"secret:{name}")
+        if row is not None:
+            await s.delete(row)

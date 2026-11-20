@@ -10,7 +10,15 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
       ...init?.headers,
     },
   })
-  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
+  if (!res.ok) {
+    const text = await res.text()
+    let msg = text
+    try {
+      const d = JSON.parse(text).detail
+      msg = Array.isArray(d) ? d.map((e: { field?: string; message?: string; msg?: string }) => `${e.field ?? ''}: ${e.message ?? e.msg}`).join('; ') : String(d)
+    } catch { /* keep raw text */ }
+    throw new Error(`${res.status} ${msg}`)
+  }
   return res.json() as Promise<T>
 }
 

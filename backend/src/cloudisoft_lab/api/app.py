@@ -5,8 +5,10 @@ import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import SecretStr
 
 from cloudisoft_lab.api.routes import core, funds, governance, research, strategies
@@ -53,9 +55,11 @@ def create_app(settings: Settings | None = None, run_worker: bool | None = None)
         if pw is None and settings.owner_password:
             pw = hash_password(settings.owner_password.get_secret_value())
         await app.state.users.ensure_owner(settings.owner_email, pw)
+        app.state.sessions = sessions
         app.state.setup_code = None
         if not await app.state.users.owner_exists():
-            app.state.setup_code = secrets.token_hex(4).upper()
+            # Persisted so a restart before the owner is created doesn't invalidate the code.
+            app.state.setup_code = await persistent_secret(sessions, "setup_code", lambda: secrets.token_hex(4).upper())
             # Printed only to the server log (visible to the hosting account), never returned by the API.
             log.warning("owner.setup_required", setup_code=app.state.setup_code,
                         how="Open the dashboard > Security & Audit > Create owner account, and enter this code")
@@ -76,6 +80,13 @@ def create_app(settings: Settings | None = None, run_worker: bool | None = None)
     app.add_middleware(SecurityMiddleware, limiter=RateLimiter())
     app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["*"],
                        allow_headers=["Authorization", "Content-Type"])
+    @app.exception_handler(RequestValidationError)
+    async def _validation(_: Request, exc: RequestValidationError) -> JSONResponse:
+        # Never echo submitted values back (they may contain passwords, codes or keys).
+        errors = [{"field": ".".join(str(p) for p in e.get("loc", [])[1:]), "message": e.get("msg", "invalid")}
+                  for e in exc.errors()]
+        return JSONResponse({"detail": errors}, status_code=422)
+
     for r in (core.router, research.router, strategies.router, funds.router, governance.router):
         app.include_router(r)
     return app

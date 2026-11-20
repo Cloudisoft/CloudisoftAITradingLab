@@ -23,8 +23,9 @@ export default function Security() {
           <form className="flex flex-wrap gap-2" onSubmit={e => { e.preventDefault(); api('/api/setup/owner', { method: 'POST', body: JSON.stringify(sc) }).then(() => login(sc.email, sc.password)).then(() => { setMsg('Owner created and signed in'); window.dispatchEvent(new Event('clab:refresh')) }).catch(er => setMsg(String(er))) }}>
             <input className={inp} placeholder="setup code" value={sc.setup_code} onChange={e => setSc({ ...sc, setup_code: e.target.value })} />
             <input className={inp} placeholder="your email" value={sc.email} onChange={e => setSc({ ...sc, email: e.target.value })} />
-            <input className={inp} type="password" placeholder="password (12+ characters)" value={sc.password} onChange={e => setSc({ ...sc, password: e.target.value })} />
-            <button className="rounded-lg bg-accent px-3 font-semibold text-white">Create owner</button>
+            <input className={inp} type="password" minLength={12} required placeholder="password (12+ characters)" value={sc.password} onChange={e => setSc({ ...sc, password: e.target.value })} />
+            <button disabled={sc.password.length < 12} className="rounded-lg bg-accent px-3 font-semibold text-white disabled:opacity-50">Create owner</button>
+            {sc.password.length > 0 && sc.password.length < 12 && <span className="self-center text-xs text-warn">{12 - sc.password.length} more characters needed</span>}
           </form>
           {msg && <p className="mt-2 text-sm text-slate-400">{msg}</p>}
         </Card>)}

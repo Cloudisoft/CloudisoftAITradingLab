@@ -157,6 +157,10 @@ def test_first_run_owner_setup(tmp_path):
         assert c.get("/api/setup/status").json() == {"owner_exists": False}
         code = app.state.setup_code
         assert code and code not in c.get("/api/system/status").text  # never exposed via the API
+    app = create_app(Settings(database_url=f"sqlite+aiosqlite:///{tmp_path}/s.db", auto_migrate=False,
+                              environment=Environment.PRODUCTION), run_worker=False)
+    with TestClient(app) as c:
+        assert app.state.setup_code == code  # survives a restart until used
         body = {"setup_code": "WRONG123", "email": "me@x", "password": "a-very-long-pass"}
         assert c.post("/api/setup/owner", json=body).status_code == 403
         assert c.post("/api/setup/owner", json=body | {"setup_code": code, "password": "short"}).status_code == 422
@@ -169,3 +173,12 @@ def test_first_run_owner_setup(tmp_path):
     with TestClient(create_app(Settings(database_url=f"sqlite+aiosqlite:///{tmp_path}/s.db", auto_migrate=False,
                                         environment=Environment.PRODUCTION), run_worker=False)) as c2:
         assert c2.app.state.setup_code is None  # owner exists, no new code printed
+
+
+def test_validation_errors_never_echo_input(tmp_path):
+    from cloudisoft_lab.core.config import Environment
+    s = Settings(database_url=f"sqlite+aiosqlite:///{tmp_path}/v.db", auto_migrate=False, environment=Environment.PRODUCTION)
+    with TestClient(create_app(s, run_worker=False)) as c:
+        r = c.post("/api/setup/owner", json={"setup_code": "ABCD1234", "email": "a@b", "password": "Secret-123"})
+        assert r.status_code == 422 and "Secret-123" not in r.text
+        assert r.json()["detail"][0]["field"] == "password"

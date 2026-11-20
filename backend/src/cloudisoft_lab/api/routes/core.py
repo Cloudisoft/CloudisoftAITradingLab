@@ -14,6 +14,7 @@ from cloudisoft_lab.backtest.engine import CostModel, run_backtest
 from cloudisoft_lab.backtest.validation import monte_carlo
 from cloudisoft_lab.core.config import get_settings
 from cloudisoft_lab.core.security import create_access_token
+from cloudisoft_lab.db.persistence import delete_secret
 from cloudisoft_lab.data.synthetic import REGIMES, make_ohlcv
 from cloudisoft_lab.domain.enums import DataOrigin
 from cloudisoft_lab.markets.registry import MARKETS
@@ -72,6 +73,7 @@ async def setup_owner(body: OwnerSetup, users: Users, request: Request) -> dict[
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     request.app.state.setup_code = None  # single use
+    await delete_secret(request.app.state.sessions, "setup_code")
     return {"created": body.email}
 
 

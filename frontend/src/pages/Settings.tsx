@@ -1,3 +1,4 @@
+import QRCode from 'qrcode'
 import { useEffect, useState } from 'react'
 import { Button, Card, ErrorNote, KV, inputCls, post, useAction, usePoll } from '../ui'
 
@@ -11,6 +12,8 @@ export default function Settings() {
   const [nu, setNu] = useState({ email: '', password: '', role: 'viewer' })
   const [totp, setTotp] = useState<{ secret: string; otpauth_uri: string } | null>(null)
   const [code, setCode] = useState('')
+  const [qr, setQr] = useState<string | null>(null)
+  useEffect(() => { if (totp) QRCode.toDataURL(totp.otpauth_uri, { width: 220, margin: 1 }).then(setQr).catch(() => setQr(null)) }, [totp])
   const a = useAction()
   return (
     <div className="space-y-4">
@@ -32,7 +35,11 @@ export default function Settings() {
         </Card>
         <Card title="Two-factor authentication (TOTP)">
           {!totp ? <Button onClick={() => a.run(() => post<{ secret: string; otpauth_uri: string }>('/api/users/me/totp', {}), r => { setTotp(r); return 'Add this secret to your authenticator app, then confirm' })}>Enable 2FA</Button>
-            : <div className="space-y-1 text-xs"><p>Secret: <code>{totp.secret}</code></p><p className="break-all text-slate-500">{totp.otpauth_uri}</p>
+            : <div className="space-y-2 text-xs">
+              <p className="text-sm">1. Scan this QR code with your authenticator app (Google Authenticator, Microsoft Authenticator, Authy):</p>
+              {qr && <img src={qr} alt="2FA QR code" className="rounded-lg bg-white p-2" width={220} height={220} />}
+              <p className="text-slate-400">Can't scan? Enter this key manually: <code className="select-all text-slate-200">{totp.secret}</code></p>
+              <p className="text-sm">2. Enter the 6-digit code the app shows:</p>
               <input className={inputCls} placeholder="6-digit code" value={code} onChange={e => setCode(e.target.value)} />
               <Button onClick={() => a.run(() => post('/api/users/me/totp/confirm', { secret: totp.secret, code }), () => '2FA enabled')}>Confirm</Button></div>}
         </Card>
